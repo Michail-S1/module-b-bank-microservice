@@ -1,0 +1,8 @@
+# Разбор ИСХОДНОГО ci/security-pipeline.gitlab-ci.yml (до исправления), PyYAML 6.0.4
+iac-scan.script = ["trivy config --severity HIGH", "CRITICAL --exit-code 1 --format json -o trivy-config.json ."]
+  -> элементов: 2 (ожидалась 1 команда; запятая в flow-списке разбила её на две)
+sca-deps.script = ["pip install --quiet pip-audit", "pip-audit -r requirements.txt -f json -o pip-audit.json || true", "pip-audit -r requirements.txt --vulnerability-service osv"]
+sast-semgrep.artifacts.reports = {'sast': 'semgrep.sarif'} (SARIF под ключом sast)
+upload-defectdojo.script[0] содержит переводы строк внутри команды curl: True
+'for f in semgrep.json:"Semgrep JSON Report" pip-audit.json:"pip-audit Scan" gitleaks.json:"Gitleaks Scan" trivy-config.json:"Trivy Scan"; do\n  curl -sf -H "Authorization: Token $DD_API_TOKEN" -F "scan'
+ошибок схемы GitLab CI у исходного файла: 0 - схема эти дефекты не ловит, поэтому нужны отдельные проверки

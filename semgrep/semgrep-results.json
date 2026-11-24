@@ -1,0 +1,1367 @@
+{
+  "version": "1.186.0",
+  "results": [
+    {
+      "check_id": "semgrep.bank.balance-check-without-row-lock",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 22,
+        "col": 13,
+        "offset": 738
+      },
+      "end": {
+        "line": 22,
+        "col": 97,
+        "offset": 822
+      },
+      "extra": {
+        "message": "Баланс читается без блокировки строки (нет SELECT ... FOR UPDATE / условного UPDATE ... WHERE balance >= amount), затем выполняется UPDATE. При READ COMMITTED параллельные переводы проходят проверку 'bal < amount' одновременно -> двойное списание и отрицательный баланс (TOCTOU / race condition).",
+        "metadata": {
+          "cwe": [
+            "CWE-362: Concurrent Execution using Shared Resource with Improper Synchronization",
+            "CWE-367: Time-of-check Time-of-use (TOCTOU) Race Condition"
+          ],
+          "owasp": [
+            "A04:2021 - Insecure Design"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/race_check.log: в 4 из 10 раундов по 30 параллельных переводов баланс отправителя ушёл в минус (до -30000); доп. прогон evidence/race_invariant_check.log: 8 из 10, сумма остатков по всем счетам в каждом раунде не менялась",
+            "source": "semgrep"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "manual.idor.transfer-from-foreign-account",
+      "path": "microservice/app/main.py",
+      "start": {
+        "line": 13,
+        "col": 1,
+        "offset": 278
+      },
+      "end": {
+        "line": 16,
+        "col": 53,
+        "offset": 517
+      },
+      "extra": {
+        "message": "IDOR (BOLA) в POST /transfer. Объект — счёт списания from_account_id и его владелец. Владелец проверяется в _must_own_account (app/crud.py:5-13: SELECT 1 FROM accounts WHERE id=$1 AND owner_user_id=$2), но user_id для этой проверки берётся из заголовка X-User-Id, который задаёт клиент (app/security.py:3-13; app/main.py:14). Подставив X-User-Id владельца счёта списания (ID последовательные: 1, 2, ...), злоумышленник списывает средства с этого счёта на любой существующий счёт. Корневая причина — доверие к идентичности от клиента (RC-1), общая с manual.idor.read-foreign-transaction-history. Semgrep это не находит: уязвимость в связке «клиентский ключ объекта + клиентская идентичность», а не в синтаксическом шаблоне.",
+        "metadata": {
+          "cwe": [
+            "CWE-639: Authorization Bypass Through User-Controlled Key",
+            "CWE-290: Authentication Bypass by Spoofing"
+          ],
+          "owasp": [
+            "A01:2021 - Broken Access Control",
+            "API1:2023 - Broken Object Level Authorization"
+          ],
+          "impact": "HIGH",
+          "likelihood": "HIGH",
+          "confidence": "HIGH",
+          "category": "security",
+          "fix_recommendation": "Идентичность только из проверенного токена (OAuth2/OIDC JWT, проверка подписи/aud/exp); владение счётом проверять по субъекту токена; ID счетов не последовательные (UUID) как defence-in-depth; deny-by-default тесты на авторизацию.",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/dynamic_checks.log:13-14 (шаг 2): X-User-Id: 1, from_account_id=1 -> HTTP 200, transaction_id=1, списание 1000 со счёта 1. Для сравнения строки 21-22 (шаг 3): X-User-Id: 2 и тот же счёт -> 403",
+            "source": "manual review"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "7031cf9583d17c42de3f437b52e62e16f241d111aa2b70fe9397bf0215d58faf",
+        "lines": "@app.post(\"/transfer\")\nasync def do_transfer(req: TransferIn, uid: int = Depends(user_id)):\n    tx_id = await crud.transfer(uid, req.from_account_id, req.to_account_id, req.amount_cents)\n    return {\"status\": \"ok\", \"transaction_id\": tx_id}",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "MANUAL"
+      }
+    },
+    {
+      "check_id": "manual.idor.read-foreign-transaction-history",
+      "path": "microservice/app/main.py",
+      "start": {
+        "line": 18,
+        "col": 1,
+        "offset": 519
+      },
+      "end": {
+        "line": 24,
+        "col": 60,
+        "offset": 779
+      },
+      "extra": {
+        "message": "IDOR в GET /transactions. Объект — история выбранного владельца: user_id берётся из заголовка X-User-Id (app/security.py:3-13; app/main.py:20), выборка ограничена условием a.owner_user_id = $1 по счёту ОТПРАВИТЕЛЯ (JOIN accounts a ON a.id = t.from_account_id, app/crud.py:52-58) и лимитом (limit 1..100, app/main.py:21). В ответ попадают исходящие операции счетов этого владельца (id, счета, сумма, время), не более limit за запрос; входящие операции не возвращаются; при непустом значении по ключу Redis tx:{uid}:{limit}:{search} возвращается пустой список (app/crud.py:45-48). Подставляя чужой X-User-Id, клиент читает исходящие операции любого владельца — раскрытие сведений, составляющих банковскую тайну. Корневая причина — RC-1, общая с manual.idor.transfer-from-foreign-account.",
+        "metadata": {
+          "cwe": [
+            "CWE-639: Authorization Bypass Through User-Controlled Key",
+            "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+          ],
+          "owasp": [
+            "A01:2021 - Broken Access Control",
+            "API1:2023 - Broken Object Level Authorization"
+          ],
+          "impact": "HIGH",
+          "likelihood": "HIGH",
+          "confidence": "HIGH",
+          "category": "security",
+          "fix_recommendation": "То же, что для /transfer: субъект из токена, а не из заголовка; rate limit и алерт на перебор.",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/dynamic_checks.log:17-18 (шаг 2b): X-User-Id: 1 -> HTTP 200, одна исходящая операция пользователя 1 (id 1, счёт 1 -> 2, 1000). Это пример одного ответа, а не наблюдение по всем клиентам",
+            "source": "manual review"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "c76903f1b3d144867f43d044308fcb20c31ec963525a62b5abd5d0bb1248db0c",
+        "lines": "@app.get(\"/transactions\", response_model=list[TxOut])\nasync def txs(\n    uid: int = Depends(user_id),\n    limit: int = Query(20, ge=1, le=100),\n    search: str | None = Query(None, max_length=100),\n):\n    rows = await crud.list_transactions(uid, limit, search)",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "MANUAL"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.identity-from-client-header",
+      "path": "microservice/app/security.py",
+      "start": {
+        "line": 11,
+        "col": 9,
+        "offset": 420
+      },
+      "end": {
+        "line": 11,
+        "col": 30,
+        "offset": 441
+      },
+      "extra": {
+        "message": "Идентификатор пользователя берётся из клиентского заголовка (x_user_id) без проверки подлинности (нет JWT/OAuth2/mTLS). Любой клиент может выдать себя за другого пользователя, подставив его ID; все проверки владения (owner_user_id = user_id) становятся обходимыми (spoofing -> IDOR).",
+        "metadata": {
+          "cwe": [
+            "CWE-290: Authentication Bypass by Spoofing",
+            "CWE-639: Authorization Bypass Through User-Controlled Key"
+          ],
+          "owasp": [
+            "A01:2021 - Broken Access Control",
+            "A07:2021 - Identification and Authentication Failures",
+            "API1:2023 - BOLA",
+            "API2:2023 - Broken Authentication"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "HIGH",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/dynamic_checks.log, шаги 1-2: любой X-User-Id принимается",
+            "source": "semgrep"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.compose-hardcoded-db-password",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 7,
+        "col": 1,
+        "offset": 78
+      },
+      "end": {
+        "line": 7,
+        "col": 34,
+        "offset": 111
+      },
+      "extra": {
+        "message": "Пароль СУБД задан литералом в docker-compose (POSTGRES_PASSWORD, к тому же дефолтный 'postgres'). Секреты должны приходить из .env/secret store (Docker secrets, Vault) и не попадать в VCS.",
+        "metadata": {
+          "cwe": [
+            "CWE-798: Use of Hard-coded Credentials",
+            "CWE-1393: Use of Default Password"
+          ],
+          "owasp": [
+            "A07:2021 - Identification and Authentication Failures"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "HIGH",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "ревью docker-compose.yml (стенд поднят без Docker, проверка по конфигурации)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.compose-datastore-port-published",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 11,
+        "col": 1,
+        "offset": 177
+      },
+      "end": {
+        "line": 11,
+        "col": 20,
+        "offset": 196
+      },
+      "extra": {
+        "message": "Порт хранилища данных (PostgreSQL 5432 / Redis 6379) опубликован на всех интерфейсах хоста. БД и кэш должны быть доступны только API во внутренней сети compose (без 'ports:' или с привязкой к 127.0.0.1).",
+        "metadata": {
+          "cwe": [
+            "CWE-668: Exposure of Resource to Wrong Sphere",
+            "CWE-1327: Binding to an Unrestricted IP Address"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "HIGH",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "ревью docker-compose.yml (стенд поднят без Docker, проверка по конфигурации)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.compose-datastore-port-published",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 18,
+        "col": 1,
+        "offset": 290
+      },
+      "end": {
+        "line": 18,
+        "col": 20,
+        "offset": 309
+      },
+      "extra": {
+        "message": "Порт хранилища данных (PostgreSQL 5432 / Redis 6379) опубликован на всех интерфейсах хоста. БД и кэш должны быть доступны только API во внутренней сети compose (без 'ports:' или с привязкой к 127.0.0.1).",
+        "metadata": {
+          "cwe": [
+            "CWE-668: Exposure of Resource to Wrong Sphere",
+            "CWE-1327: Binding to an Unrestricted IP Address"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "HIGH",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "ревью docker-compose.yml (стенд поднят без Docker, проверка по конфигурации)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.compose-credentials-in-dsn",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 23,
+        "col": 21,
+        "offset": 368
+      },
+      "end": {
+        "line": 23,
+        "col": 52,
+        "offset": 399
+      },
+      "extra": {
+        "message": "Учётные данные зашиты в строку подключения (DSN). Вынесите в секреты, используйте отдельную роль приложения с минимальными правами (не суперпользователь postgres).",
+        "metadata": {
+          "cwe": [
+            "CWE-798: Use of Hard-coded Credentials",
+            "CWE-250: Execution with Unnecessary Privileges"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "HIGH",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "ревью docker-compose.yml (стенд поднят без Docker, проверка по конфигурации)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "ERROR",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "manual.logging.no-audit-trail-of-initiator",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 35,
+        "col": 13,
+        "offset": 1500
+      },
+      "end": {
+        "line": 38,
+        "col": 14,
+        "offset": 1700
+      },
+      "extra": {
+        "message": "В transactions пишутся только from/to/amount. В коде приложения нет журналирования: не фиксируются инициатор (user_id), request-id, параметры и решение авторизации. Access-log uvicorn (если включён) пишет метод, путь, код ответа и IP, но не инициатора. Спорную операцию нельзя надёжно расследовать (STRIDE: Repudiation).",
+        "metadata": {
+          "cwe": [
+            "CWE-778: Insufficient Logging",
+            "CWE-223: Omission of Security-relevant Information"
+          ],
+          "owasp": [
+            "A09:2021 - Security Logging and Monitoring Failures"
+          ],
+          "impact": "MEDIUM",
+          "likelihood": "HIGH",
+          "confidence": "HIGH",
+          "category": "security",
+          "fix_recommendation": "Append-only аудит-журнал (initiator, request-id, src IP, решение авторизации) с отправкой в SIEM; алерты на 403-всплески и перебор ID.",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "код: INSERT INTO transactions(from_account_id,to_account_id,amount_cents); вызовов logging в app/ нет",
+            "source": "manual review"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "97ee2052cf0fe2d966b9cd2ffe842e4512787900b09121a76100a70a4231f2e1",
+        "lines": "            tx_id = await conn.fetchval(\n                \"INSERT INTO transactions(from_account_id,to_account_id,amount_cents) VALUES ($1,$2,$3) RETURNING id\",\n                from_id, to_id, amount\n            )",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "MANUAL"
+      }
+    },
+    {
+      "check_id": "manual.logic.cache-invalidation-key-mismatch",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 40,
+        "col": 5,
+        "offset": 1706
+      },
+      "end": {
+        "line": 40,
+        "col": 36,
+        "offset": 1737
+      },
+      "extra": {
+        "message": "После перевода удаляется ключ tx:{user_id}, а list_transactions читает ключи tx:{user_id}:{limit}:{search}. Инвалидация не срабатывает: при включении записи в кэш клиент увидит устаревшую историю; записанные извне ключи переживают переводы.",
+        "metadata": {
+          "cwe": [
+            "CWE-840: Business Logic Errors"
+          ],
+          "owasp": [],
+          "impact": "MEDIUM",
+          "likelihood": "MEDIUM",
+          "confidence": "HIGH",
+          "category": "security",
+          "fix_recommendation": "Единая функция построения ключа; инвалидация по префиксу/версии (tx:{uid}:v{n}) или отказ от кэширования финансовых данных.",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/dynamic_checks.log, шаг 7b: EXISTS tx:2:20: = 1 после перевода",
+            "source": "manual review"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "d870946349e0b52de469c0e9d2a948059300b193424403c9d189b08339226110",
+        "lines": "    await r.delete(f\"tx:{user_id}\")",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "MANUAL"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.cache-hit-returns-empty",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 46,
+        "col": 5,
+        "offset": 1915
+      },
+      "end": {
+        "line": 48,
+        "col": 18,
+        "offset": 1979
+      },
+      "extra": {
+        "message": "При попадании в кэш возвращается пустой список вместо данных; содержимое ключа не проверяется. Любой, кто может записать ключ в Redis (Redis без аутентификации, порт опубликован), скрывает у клиента историю операций (integrity/availability), а при исправлении логики — подменяет её (cache poisoning).",
+        "metadata": {
+          "cwe": [
+            "CWE-345: Insufficient Verification of Data Authenticity",
+            "CWE-840: Business Logic Errors"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/dynamic_checks.log, шаг 7: SET tx:1:20: x -> история пуста",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.dynamic-sql-fstring",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 61,
+        "col": 13,
+        "offset": 2351
+      },
+      "end": {
+        "line": 61,
+        "col": 57,
+        "offset": 2395
+      },
+      "extra": {
+        "message": "SQL-запрос собирается конкатенацией f-строк (sql). В текущей версии в строку подставляются только номера плейсхолдеров ($2, $3), а значения идут bind-параметрами — триаж обязателен. Шаблон опасен регрессией: любая правка вида f\"... '{search}'\" даёт SQL Injection.",
+        "metadata": {
+          "cwe": [
+            "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+          ],
+          "owasp": [
+            "A03:2021 - Injection"
+          ],
+          "confidence": "MEDIUM",
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "false_positive_exploitability",
+            "evidence": "основание — путь данных по коду: в f-строку подставляется только номер плейсхолдера ${i} (int, формируется в функции), значение search добавляется в params (crud.py:62) и передаётся conn.fetch(sql, *params) (crud.py:66). Иллюстрация: dynamic_checks.log:25-26 — тело ответа [] за ~4 мс. Оставлено как регрессионный риск (карточка #5)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.dynamic-sql-fstring",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 64,
+        "col": 9,
+        "offset": 2464
+      },
+      "end": {
+        "line": 64,
+        "col": 57,
+        "offset": 2512
+      },
+      "extra": {
+        "message": "SQL-запрос собирается конкатенацией f-строк (sql). В текущей версии в строку подставляются только номера плейсхолдеров ($2, $3), а значения идут bind-параметрами — триаж обязателен. Шаблон опасен регрессией: любая правка вида f\"... '{search}'\" даёт SQL Injection.",
+        "metadata": {
+          "cwe": [
+            "CWE-89: Improper Neutralization of Special Elements used in an SQL Command"
+          ],
+          "owasp": [
+            "A03:2021 - Injection"
+          ],
+          "confidence": "MEDIUM",
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "false_positive_exploitability",
+            "evidence": "аналогично строке 61: в строку попадает номер плейсхолдера, значение limit добавляется в params (crud.py:65) и валидировано Query(ge=1, le=100) (main.py:21)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "community-rules.python.lang.security.audit.sqli.asyncpg-sqli",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 66,
+        "col": 22,
+        "offset": 2563
+      },
+      "end": {
+        "line": 66,
+        "col": 46,
+        "offset": 2587
+      },
+      "extra": {
+        "message": "Detected string concatenation with a non-literal variable in a asyncpg Python SQL statement. This could lead to SQL injection if the variable is user-controlled and not properly sanitized. In order to prevent SQL injection, use parameterized queries or prepared statements instead. You can create parameterized queries like so: 'conn.fetch(\"SELECT from  FROM table\", value)'. You can also create prepared statements with 'Connection.prepare': 'stmt = conn.prepare(\"SELECT from  FROM table\"); await stmt.fetch(user_value)'",
+        "metadata": {
+          "references": [
+            "https://github.com/MagicStack/asyncpg",
+            "https://magicstack.github.io/asyncpg/current/"
+          ],
+          "category": "security",
+          "cwe": [
+            "CWE-89: Improper Neutralization of Special Elements used in an SQL Command ('SQL Injection')"
+          ],
+          "technology": [
+            "asyncpg"
+          ],
+          "owasp": [
+            "A01:2017 - Injection",
+            "A03:2021 - Injection",
+            "A05:2025 - Injection"
+          ],
+          "cwe2022-top25": true,
+          "cwe2021-top25": true,
+          "subcategory": [
+            "audit"
+          ],
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "confidence": "LOW",
+          "triage": {
+            "status": "false_positive_exploitability",
+            "evidence": "правило реагирует на SQL, собранный форматированием; значения пользователя передаются связуемыми параметрами conn.fetch(sql, *params) (crud.py:66). Наблюдения: dynamic_checks.log:25-26 — payload ' OR '1'='1 -> тело [] за ~4 мс; строки 27-28 — payload с pg_sleep(3) -> HTTP 200 за ~2,4 мс, тело ответа не сохранено. Основание вывода — путь данных по коду, а не время ответа",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "manual.logic.transfer-no-idempotency-no-rate-limit",
+      "path": "microservice/app/main.py",
+      "start": {
+        "line": 13,
+        "col": 1,
+        "offset": 278
+      },
+      "end": {
+        "line": 16,
+        "col": 53,
+        "offset": 517
+      },
+      "extra": {
+        "message": "POST /transfer не поддерживает идемпотентность и не ограничен по частоте. (1) Механизма нет: код не читает Idempotency-Key, в transactions нет уникального ключа операции. (2) Наблюдаемое повторное списание: два одинаковых POST создают две операции (сетевой ретрай, replay перехваченного запроса, двойной клик). Ограничения частоты нет — автоматизированный вывод средств и перебор не сдерживаются.",
+        "metadata": {
+          "cwe": [
+            "CWE-294: Authentication Bypass by Capture-replay",
+            "CWE-799: Improper Control of Interaction Frequency"
+          ],
+          "owasp": [
+            "API4:2023 - Unrestricted Resource Consumption",
+            "API6:2023 - Unrestricted Access to Sensitive Business Flows"
+          ],
+          "impact": "MEDIUM",
+          "likelihood": "MEDIUM",
+          "confidence": "HIGH",
+          "category": "security",
+          "fix_recommendation": "Обязательный Idempotency-Key + UNIQUE(initiator, idempotency_key); rate limit на API-шлюзе; лимиты и антифрод-скоринг для переводов.",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/replay_check.log: 2 одинаковых POST -> 2 операции (tx 20, 21), баланс 100000 -> 95000 вместо 97500; с одинаковым Idempotency-Key -> ещё 2 операции (tx 22, 23). Rate limiting — по коду (ограничителей нет), нагрузочно не проверялся",
+            "source": "manual review"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "fc5d04d11eedc59506f55d3bd8ef8265465b21e26252dbc540abe054ef870666",
+        "lines": "@app.post(\"/transfer\")\nasync def do_transfer(req: TransferIn, uid: int = Depends(user_id)):\n    tx_id = await crud.transfer(uid, req.from_account_id, req.to_account_id, req.amount_cents)\n    return {\"status\": \"ok\", \"transaction_id\": tx_id}",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "MANUAL"
+      }
+    },
+    {
+      "check_id": "community-rules.yaml.docker-compose.security.no-new-privileges",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 4,
+        "col": 3,
+        "offset": 28
+      },
+      "end": {
+        "line": 4,
+        "col": 11,
+        "offset": 36
+      },
+      "extra": {
+        "message": "Service 'postgres' allows for privilege escalation via setuid or setgid binaries. Add 'no-new-privileges:true' in 'security_opt' to prevent this.",
+        "metadata": {
+          "cwe": [
+            "CWE-732: Incorrect Permission Assignment for Critical Resource"
+          ],
+          "owasp": [
+            "A05:2021 - Security Misconfiguration",
+            "A06:2017 - Security Misconfiguration",
+            "A02:2025 - Security Misconfiguration"
+          ],
+          "references": [
+            "https://raesene.github.io/blog/2019/06/01/docker-capabilities-and-no-new-privs/",
+            "https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt",
+            "https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag"
+          ],
+          "category": "security",
+          "technology": [
+            "docker-compose"
+          ],
+          "cwe2021-top25": true,
+          "subcategory": [
+            "audit"
+          ],
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "confidence": "LOW",
+          "triage": {
+            "status": "true_positive_hardening",
+            "evidence": "отсутствуют no-new-privileges и read_only — усиление контейнеров",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "community-rules.yaml.docker-compose.security.writable-filesystem-service",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 4,
+        "col": 3,
+        "offset": 28
+      },
+      "end": {
+        "line": 4,
+        "col": 11,
+        "offset": 36
+      },
+      "extra": {
+        "message": "Service 'postgres' is running with a writable root filesystem. This may allow malicious applications to download and run additional payloads, or modify container files. If an application inside a container has to save something temporarily consider using a tmpfs. Add 'read_only: true' to this service to prevent this.",
+        "metadata": {
+          "cwe": [
+            "CWE-732: Incorrect Permission Assignment for Critical Resource"
+          ],
+          "owasp": [
+            "A05:2021 - Security Misconfiguration",
+            "A06:2017 - Security Misconfiguration",
+            "A02:2025 - Security Misconfiguration"
+          ],
+          "references": [
+            "https://docs.docker.com/compose/compose-file/compose-file-v3/#domainname-hostname-ipc-mac_address-privileged-read_only-shm_size-stdin_open-tty-user-working_dir",
+            "https://blog.atomist.com/security-of-docker-kubernetes/",
+            "https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only"
+          ],
+          "category": "security",
+          "technology": [
+            "docker-compose"
+          ],
+          "cwe2021-top25": true,
+          "subcategory": [
+            "audit"
+          ],
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "confidence": "LOW",
+          "triage": {
+            "status": "true_positive_hardening",
+            "evidence": "отсутствуют no-new-privileges и read_only — усиление контейнеров",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "community-rules.yaml.docker-compose.security.no-new-privileges",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 15,
+        "col": 3,
+        "offset": 253
+      },
+      "end": {
+        "line": 15,
+        "col": 8,
+        "offset": 258
+      },
+      "extra": {
+        "message": "Service 'redis' allows for privilege escalation via setuid or setgid binaries. Add 'no-new-privileges:true' in 'security_opt' to prevent this.",
+        "metadata": {
+          "cwe": [
+            "CWE-732: Incorrect Permission Assignment for Critical Resource"
+          ],
+          "owasp": [
+            "A05:2021 - Security Misconfiguration",
+            "A06:2017 - Security Misconfiguration",
+            "A02:2025 - Security Misconfiguration"
+          ],
+          "references": [
+            "https://raesene.github.io/blog/2019/06/01/docker-capabilities-and-no-new-privs/",
+            "https://www.kernel.org/doc/Documentation/prctl/no_new_privs.txt",
+            "https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-4-add-no-new-privileges-flag"
+          ],
+          "category": "security",
+          "technology": [
+            "docker-compose"
+          ],
+          "cwe2021-top25": true,
+          "subcategory": [
+            "audit"
+          ],
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "confidence": "LOW",
+          "triage": {
+            "status": "true_positive_hardening",
+            "evidence": "отсутствуют no-new-privileges и read_only — усиление контейнеров",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "community-rules.yaml.docker-compose.security.writable-filesystem-service",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 15,
+        "col": 3,
+        "offset": 253
+      },
+      "end": {
+        "line": 15,
+        "col": 8,
+        "offset": 258
+      },
+      "extra": {
+        "message": "Service 'redis' is running with a writable root filesystem. This may allow malicious applications to download and run additional payloads, or modify container files. If an application inside a container has to save something temporarily consider using a tmpfs. Add 'read_only: true' to this service to prevent this.",
+        "metadata": {
+          "cwe": [
+            "CWE-732: Incorrect Permission Assignment for Critical Resource"
+          ],
+          "owasp": [
+            "A05:2021 - Security Misconfiguration",
+            "A06:2017 - Security Misconfiguration",
+            "A02:2025 - Security Misconfiguration"
+          ],
+          "references": [
+            "https://docs.docker.com/compose/compose-file/compose-file-v3/#domainname-hostname-ipc-mac_address-privileged-read_only-shm_size-stdin_open-tty-user-working_dir",
+            "https://blog.atomist.com/security-of-docker-kubernetes/",
+            "https://cheatsheetseries.owasp.org/cheatsheets/Docker_Security_Cheat_Sheet.html#rule-8-set-filesystem-and-volumes-to-read-only"
+          ],
+          "category": "security",
+          "technology": [
+            "docker-compose"
+          ],
+          "cwe2021-top25": true,
+          "subcategory": [
+            "audit"
+          ],
+          "likelihood": "LOW",
+          "impact": "HIGH",
+          "confidence": "LOW",
+          "triage": {
+            "status": "true_positive_hardening",
+            "evidence": "отсутствуют no-new-privileges и read_only — усиление контейнеров",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.redis-without-auth-or-tls",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 24,
+        "col": 18,
+        "offset": 435
+      },
+      "end": {
+        "line": 24,
+        "col": 38,
+        "offset": 455
+      },
+      "extra": {
+        "message": "Подключение к Redis без пароля/ACL-пользователя и без TLS (схема redis://, нет user:pass@). Redis 7 по умолчанию без аутентификации: любой узел сети читает/пишет кэш (FLUSHALL, подмена ключей tx:*).",
+        "metadata": {
+          "cwe": [
+            "CWE-306: Missing Authentication for Critical Function",
+            "CWE-319: Cleartext Transmission of Sensitive Information"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "HIGH",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "REDIS_URL redis://redis:6379/0 без пароля, образ redis:7 без requirepass",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.vulnerable-dependency-fastapi-starlette",
+      "path": "microservice/requirements.txt",
+      "start": {
+        "line": 1,
+        "col": 1,
+        "offset": 0
+      },
+      "end": {
+        "line": 1,
+        "col": 17,
+        "offset": 16
+      },
+      "extra": {
+        "message": "fastapi==0.115.0 тянет starlette<0.39.0 (резолвится 0.38.6), уязвимую к CVE-2024-47874 (DoS multipart, fix 0.40.0), CVE-2025-54121 (fix 0.47.2) и CVE-2026-48710/48817/48818/54282/54283 (fix до 1.3.1). Обновите fastapi до версии со свежим starlette.",
+        "metadata": {
+          "cwe": [
+            "CWE-1395: Dependency on Vulnerable Third-Party Component"
+          ],
+          "references": [
+            "https://osv.dev/vulnerability/GHSA-f96h-pmfr-66vw",
+            "https://osv.dev/vulnerability/GHSA-2c2j-9gv5-cj73"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/pip-audit.json (pip-audit 2026-11-24, OSV/PyPI advisory DB)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.vulnerable-dependency-python-dotenv",
+      "path": "microservice/requirements.txt",
+      "start": {
+        "line": 7,
+        "col": 1,
+        "offset": 113
+      },
+      "end": {
+        "line": 7,
+        "col": 21,
+        "offset": 133
+      },
+      "extra": {
+        "message": "python-dotenv==1.0.1 уязвим (CVE-2026-28684 / GHSA-mf9w-mj56-hr94), исправлено в 1.2.2.",
+        "metadata": {
+          "cwe": [
+            "CWE-1395: Dependency on Vulnerable Third-Party Component"
+          ],
+          "references": [
+            "https://osv.dev/vulnerability/GHSA-mf9w-mj56-hr94"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "LOW",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/pip-audit.json (pip-audit 2026-11-24, OSV/PyPI advisory DB)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "WARNING",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.existence-oracle-404",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 24,
+        "col": 23,
+        "offset": 873
+      },
+      "end": {
+        "line": 24,
+        "col": 86,
+        "offset": 936
+      },
+      "extra": {
+        "message": "Разные коды/тексты ошибок для несуществующего счёта (\"From account not found\", 404) и прочих отказов (400/403) позволяют перебором ID определять существующие счета (enumeration). ID счетов — последовательный BIGSERIAL.",
+        "metadata": {
+          "cwe": [
+            "CWE-204: Observable Response Discrepancy"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "LOW",
+          "category": "security",
+          "triage": {
+            "status": "true_positive_low",
+            "evidence": "счёт списания: ветка 404 'From account not found' (crud.py:23-24) при штатной работе недостижима — _must_own_account (crud.py:5-13) уже требует строки accounts с этим id и владельцем, иначе 403 (dynamic_checks.log:21-22, шаг 3). 404 возможен только при удалении счёта между проверками; оракула существования счёта списания нет",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.existence-oracle-404",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 30,
+        "col": 23,
+        "offset": 1190
+      },
+      "end": {
+        "line": 30,
+        "col": 84,
+        "offset": 1251
+      },
+      "extra": {
+        "message": "Разные коды/тексты ошибок для несуществующего счёта (\"To account not found\", 404) и прочих отказов (400/403) позволяют перебором ID определять существующие счета (enumeration). ID счетов — последовательный BIGSERIAL.",
+        "metadata": {
+          "cwe": [
+            "CWE-204: Observable Response Discrepancy"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "LOW",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "основание — код: после проверки баланса (crud.py:22-26) отсутствующий получатель даёт 404 'To account not found' (crud.py:28-30), существующий — операция продолжается (crud.py:32-38). Наблюдения стенда: счёт списания 2, сумма 1: получатель 999 -> 404 (dynamic_checks.log:35-36, шаг 5); получатель 1 -> HTTP 200 (dynamic_checks.log:50-51, шаг 7b; другой шаг стенда). Строки 37-38 (400 'Insufficient funds') показывают ветку нехватки средств, которая срабатывает до проверки получателя, и доказательством существования получателя не являются. Ограничение: при существующем получателе проба выполняет реальный перевод",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.like-wildcard-not-escaped",
+      "path": "microservice/app/crud.py",
+      "start": {
+        "line": 62,
+        "col": 27,
+        "offset": 2422
+      },
+      "end": {
+        "line": 62,
+        "col": 40,
+        "offset": 2435
+      },
+      "extra": {
+        "message": "Пользовательский ввод вставляется в шаблон LIKE/ILIKE без экранирования '%' и '_'. Не SQLi, но клиент управляет семантикой поиска (search=_ возвращает всё), что усиливает выгрузку данных и нагрузку на БД (полные сканы по CAST(id AS TEXT)).",
+        "metadata": {
+          "cwe": [
+            "CWE-155: Improper Neutralization of Wildcards or Matching Symbols"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "LOW",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "search=_ совпадает с любым id, то есть возвращает все строки той же выборки — исходящие операции счетов владельца из X-User-Id, не более limit (crud.py:52-65); за пределы владельца wildcard выборку не расширяет. dynamic_checks.log:30-32 (шаг 4b): для пользователя 1 возвращена его единственная операция",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.asyncpg-pool-without-tls",
+      "path": "microservice/app/db.py",
+      "start": {
+        "line": 9,
+        "col": 23,
+        "offset": 160
+      },
+      "end": {
+        "line": 9,
+        "col": 98,
+        "offset": 235
+      },
+      "extra": {
+        "message": "Пул asyncpg создаётся без параметра ssl=; при DSN без sslmode=verify-full трафик к PostgreSQL (включая балансы и учётные данные) идёт открытым текстом.",
+        "metadata": {
+          "cwe": [
+            "CWE-319: Cleartext Transmission of Sensitive Information"
+          ],
+          "confidence": "MEDIUM",
+          "likelihood": "LOW",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "true_positive_hardening",
+            "evidence": "подтверждено только: в конфигурации сервиса явно не задано требование TLS с проверкой имени сервера — create_pool без ssl= (db.py:9), в DSN нет sslmode (docker-compose.yml:23). asyncpg 0.29.0 при этом для TCP использует sslmode=prefer (asyncpg/connect_utils.py:489-492, тег v0.29.0): TLS, если его поддерживает сервер, без проверки сертификата. Фактическое шифрование соединения не проверено. Утверждение extra.message об открытом тексте — формулировка правила на момент сканирования; правило с тех пор переформулировано, повторный запуск обновлённых правил не выполнялся. Рекомендация: sslmode=verify-full с проверкой сертификата сервера",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.fastapi-docs-exposed",
+      "path": "microservice/app/main.py",
+      "start": {
+        "line": 7,
+        "col": 7,
+        "offset": 174
+      },
+      "end": {
+        "line": 7,
+        "col": 41,
+        "offset": 208
+      },
+      "extra": {
+        "message": "FastAPI создаётся с настройками по умолчанию: /docs, /redoc и /openapi.json доступны без аутентификации (раскрытие поверхности атаки в prod). Отключайте docs_url/openapi_url вне dev.",
+        "metadata": {
+          "cwe": [
+            "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+          ],
+          "owasp": [
+            "API9:2023 - Improper Inventory Management"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "MEDIUM",
+          "impact": "LOW",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "evidence/dynamic_checks.log, шаг 10: /docs и /openapi.json -> 200",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.amount-without-upper-bound",
+      "path": "microservice/app/schemas.py",
+      "start": {
+        "line": 6,
+        "col": 5,
+        "offset": 125
+      },
+      "end": {
+        "line": 6,
+        "col": 36,
+        "offset": 156
+      },
+      "extra": {
+        "message": "Сумма перевода ограничена только снизу (gt=0): нет верхнего лимита на операцию и бизнес-лимитов (суточный лимит, антифрод). Переполнение BIGINT блокируется проверкой баланса, но вывод средств одной операцией не ограничен.",
+        "metadata": {
+          "cwe": [
+            "CWE-20: Improper Input Validation",
+            "CWE-840: Business Logic Errors"
+          ],
+          "confidence": "MEDIUM",
+          "likelihood": "LOW",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "true_positive_low",
+            "evidence": "шаг 6: переполнение BIGINT не достижимо (отсекается проверкой баланса); остаётся отсутствие лимитов операции",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.compose-image-not-pinned-by-digest",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 5,
+        "col": 1,
+        "offset": 38
+      },
+      "end": {
+        "line": 5,
+        "col": 23,
+        "offset": 60
+      },
+      "extra": {
+        "message": "Образ задан плавающим тегом без @sha256-дайджеста — сборка невоспроизводима, возможна подмена образа (supply chain).",
+        "metadata": {
+          "cwe": [
+            "CWE-494: Download of Code Without Integrity Check",
+            "CWE-1357: Reliance on Insufficiently Trustworthy Component"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "LOW",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "ревью docker-compose.yml (стенд поднят без Docker, проверка по конфигурации)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "semgrep.bank.compose-image-not-pinned-by-digest",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 16,
+        "col": 1,
+        "offset": 260
+      },
+      "end": {
+        "line": 16,
+        "col": 19,
+        "offset": 278
+      },
+      "extra": {
+        "message": "Образ задан плавающим тегом без @sha256-дайджеста — сборка невоспроизводима, возможна подмена образа (supply chain).",
+        "metadata": {
+          "cwe": [
+            "CWE-494: Download of Code Without Integrity Check",
+            "CWE-1357: Reliance on Insufficiently Trustworthy Component"
+          ],
+          "confidence": "HIGH",
+          "likelihood": "LOW",
+          "impact": "MEDIUM",
+          "category": "security",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "ревью docker-compose.yml (стенд поднят без Docker, проверка по конфигурации)",
+            "source": "semgrep"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "requires login",
+        "lines": "requires login",
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "OSS"
+      }
+    },
+    {
+      "check_id": "manual.transport.api-plain-http",
+      "path": "microservice/docker-compose.yml",
+      "start": {
+        "line": 25,
+        "col": 5,
+        "offset": 460
+      },
+      "end": {
+        "line": 26,
+        "col": 20,
+        "offset": 486
+      },
+      "extra": {
+        "message": "В docker-compose API публикуется на 8000/tcp, TLS-терминатор (reverse proxy/ingress) не описан. Наличие TLS на внешнем ingress по материалам не устанавливается; без него заголовок идентичности и финансовые данные идут открытым текстом.",
+        "metadata": {
+          "cwe": [
+            "CWE-319: Cleartext Transmission of Sensitive Information"
+          ],
+          "owasp": [
+            "A02:2021 - Cryptographic Failures"
+          ],
+          "impact": "MEDIUM",
+          "likelihood": "MEDIUM",
+          "confidence": "MEDIUM",
+          "category": "security",
+          "fix_recommendation": "TLS 1.2+/1.3 на ingress/API-шлюзе, HSTS; mTLS между сервисами внутри периметра.",
+          "triage": {
+            "status": "confirmed",
+            "evidence": "docker-compose.yml: ports 8000:8000, TLS-прокси в конфигурации нет; Dockerfile в репозитории отсутствует",
+            "source": "manual review"
+          }
+        },
+        "severity": "INFO",
+        "fingerprint": "4376a670ec8ad128a50af3fb10900b1831e9a2f5031dd2f9b3b27dbbc39038f4",
+        "lines": "    ports:\n      - \"8000:8000\"",
+        "is_ignored": false,
+        "validation_state": "NO_VALIDATOR",
+        "engine_kind": "MANUAL"
+      }
+    }
+  ],
+  "errors": [],
+  "paths": {
+    "scanned": [
+      "microservice/app/config.py",
+      "microservice/app/crud.py",
+      "microservice/app/db.py",
+      "microservice/app/main.py",
+      "microservice/app/redis_client.py",
+      "microservice/app/schemas.py",
+      "microservice/app/security.py",
+      "microservice/docker-compose.yml",
+      "microservice/requirements.txt"
+    ]
+  },
+  "time": {
+    "rules": [],
+    "rules_parse_time": 0.2611560821533203,
+    "profiling_times": {
+      "config_time": 43.069446325302124,
+      "core_time": 0.8304040431976318,
+      "ignores_time": 0.001272439956665039,
+      "total_time": 43.91074991226196
+    },
+    "parsing_time": {
+      "total_time": 0.03872084617614746,
+      "per_file_time": {
+        "mean": 0.0001273712045268008,
+        "std_dev": 1.0976861293919101e-06
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_files": []
+    },
+    "scanning_time": {
+      "total_time": 0.18616390228271484,
+      "per_file_time": {
+        "mean": 0.007160150087796721,
+        "std_dev": 0.00012301348117617204
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_files": []
+    },
+    "matching_time": {
+      "total_time": 0.07411313056945801,
+      "per_file_and_rule_time": {
+        "mean": 0.0002437931926626908,
+        "std_dev": 5.423787864576838e-07
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_files": []
+    },
+    "tainting_time": {
+      "total_time": 0.011265754699707031,
+      "per_def_and_rule_time": {
+        "mean": 0.0005632877349853515,
+        "std_dev": 1.901990830219802e-06
+      },
+      "very_slow_stats": {
+        "time_ratio": 0.0,
+        "count_ratio": 0.0
+      },
+      "very_slow_rules_on_defs": []
+    },
+    "fixpoint_timeouts": [],
+    "prefiltering": {
+      "project_level_time": 0.0,
+      "file_level_time": 0.0,
+      "rules_with_project_prefilters_ratio": 0.0,
+      "rules_with_file_prefilters_ratio": 0.9427257525083612,
+      "rules_selected_ratio": 0.06981605351170568,
+      "rules_matched_ratio": 0.06981605351170568
+    },
+    "targets": [],
+    "total_bytes": 0,
+    "max_memory_bytes": 387363968
+  },
+  "engine_requested": "OSS",
+  "skipped_rules": [],
+  "profiling_results": []
+}

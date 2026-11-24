@@ -1,0 +1,64 @@
+
+### 0. Исходное состояние
+1|1|500000
+2|2|250000
+
+### 1. Аутентификации нет: без заголовка 401, с любым X-User-Id — доступ
+$ curl http://127.0.0.1:18000/transactions
+{"detail":"Missing X-User-Id header"}  -> HTTP 401, 0.001303s
+$ curl -H X-User-Id: 2 http://127.0.0.1:18000/transactions
+[]  -> HTTP 200, 0.004443s
+
+### 2. IDOR: клиент (реально user 2) подставляет X-User-Id: 1 и списывает со счёта 1
+$ curl -X POST -H X-User-Id: 1 -H Content-Type: application/json -d {"from_account_id":1,"to_account_id":2,"amount_cents":1000} http://127.0.0.1:18000/transfer
+{"status":"ok","transaction_id":1}  -> HTTP 200, 0.008027s
+
+### 2b. IDOR: чтение истории чужого пользователя
+$ curl -H X-User-Id: 1 http://127.0.0.1:18000/transactions
+[{"id":1,"from_account_id":1,"to_account_id":2,"amount_cents":1000,"created_at":"2026-11-24T13:01:58.092870+00:00"}]  -> HTTP 200, 0.002504s
+
+### 3. Контроль владения работает только при честном X-User-Id (ожидаем 403)
+$ curl -X POST -H X-User-Id: 2 -H Content-Type: application/json -d {"from_account_id":1,"to_account_id":2,"amount_cents":1} http://127.0.0.1:18000/transfer
+{"detail":"Forbidden"}  -> HTTP 403, 0.002341s
+
+### 4. SQLi в search: payload'ы передаются как bind-параметр (ожидаем пустой список, не ошибку)
+$ curl -G -H X-User-Id: 1 --data-urlencode search=' OR '1'='1 http://127.0.0.1:18000/transactions
+[]  -> HTTP 200, 0.004012s
+$ curl -G -H X-User-Id: 1 --data-urlencode search=1'; SELECT pg_sleep(3)-- http://127.0.0.1:18000/transactions -o /dev/null
+  -> HTTP 200, 0.002442s
+
+### 4b. Wildcard в ILIKE: '%' и '_' не экранируются (совпадает со всем)
+$ curl -G -H X-User-Id: 1 --data-urlencode search=_ http://127.0.0.1:18000/transactions
+[{"id":1,"from_account_id":1,"to_account_id":2,"amount_cents":1000,"created_at":"2026-11-24T13:01:58.092870+00:00"}]  -> HTTP 200, 0.002117s
+
+### 5. Перечисление счетов: разные ответы для существующего/несуществующего to_account
+$ curl -X POST -H X-User-Id: 2 -H Content-Type: application/json -d {"from_account_id":2,"to_account_id":999,"amount_cents":1} http://127.0.0.1:18000/transfer
+{"detail":"To account not found"}  -> HTTP 404, 0.002092s
+$ curl -X POST -H X-User-Id: 2 -H Content-Type: application/json -d {"from_account_id":2,"to_account_id":1,"amount_cents":999999999} http://127.0.0.1:18000/transfer
+{"detail":"Insufficient funds"}  -> HTTP 400, 0.002249s
+
+### 6. Нет верхней границы amount_cents: значение > BIGINT
+$ curl -X POST -H X-User-Id: 2 -H Content-Type: application/json -d {"from_account_id":2,"to_account_id":1,"amount_cents":99999999999999999999} http://127.0.0.1:18000/transfer
+{"detail":"Insufficient funds"}  -> HTTP 400, 0.002244s
+
+### 7. Кэш Redis: ключ, записанный в Redis, обнуляет выдачу истории (Redis без аутентификации)
+$ redis-cli SET tx:1:20: x
+$ curl -H X-User-Id: 1 http://127.0.0.1:18000/transactions
+[]  -> HTTP 200, 0.001323s
+
+### 7b. После перевода удаляется ключ tx:{uid}, а читаются tx:{uid}:{limit}:{search} — инвалидация не совпадает
+$ curl -X POST -H X-User-Id: 2 -H Content-Type: application/json -d {"from_account_id":2,"to_account_id":1,"amount_cents":1} http://127.0.0.1:18000/transfer
+{"status":"ok","transaction_id":2}  -> HTTP 200, 0.003867s
+$ redis-cli EXISTS tx:2:20:  -> 1 (1 = ключ пережил инвалидацию)
+
+### 8. Race condition (TOCTOU): 20 параллельных переводов всего баланса со счёта 3
+200 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 400 
+account 3 balance_cents=0
+successful transfers from 3: 1
+
+### 9. Повтор (replay) запроса = повторное списание: нет idempotency key
+3 transactions total
+
+### 10. Swagger/OpenAPI доступны без аутентификации
+/docs -> HTTP 200
+/openapi.json -> HTTP 200

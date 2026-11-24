@@ -1,0 +1,1749 @@
+{
+  "version": "2.3.0",
+  "summary": {
+    "title": "Bank Microservice — модель угроз (перевод средств и история транзакций)",
+    "owner": "Curmyc",
+    "description": "Объект: микросервис банка (microservice.zip, файлы от 2026-09-23): REST API на FastAPI (POST /transfer, GET /transactions), PostgreSQL 16, Redis 7 (кэш истории), docker-compose.\nМетодология: DFD уровня 1 + STRIDE per element; критичность = CVSS 3.1 + влияние на бизнес. Источники: ручной анализ кода, Semgrep, динамические проверки на локальном стенде (evidence/).\nСчёт угроз: 22 карточки — сценарии STRIDE на элементах DFD; они сводятся к 13 корневым причинам (RC-1…RC-13): 11 подтверждены, 2 — потенциальные риски (RC-5 — регрессия к SQLi, RC-13 — хранение и бэкапы). Метка [RC-n] и «Связано: #…» в карточке указывают причину и связанные карточки; полная таблица — threat-model/threat-register.md.\nОграничения: в материалах не описаны IdP, API-шлюз и ingress; выводы о конфигурации относятся к предоставленным файлам, а не ко всей инфраструктуре банка. В поставке сервис не стартует (main.py импортирует несуществующие имена user_id, TransferIn, TxOut; Dockerfile отсутствует) — проверки выполнены через харнесс с алиасами, код не менялся.",
+    "id": 0
+  },
+  "detail": {
+    "contributors": [
+      {
+        "name": "Curmyc"
+      }
+    ],
+    "diagrams": [
+      {
+        "id": 0,
+        "version": "2.3.0",
+        "title": "DFD: Bank Microservice (уровень 1)",
+        "diagramType": "STRIDE",
+        "description": "Потоки 1-7 — штатная работа сервиса; потоки 8-9 — прямой доступ к хранилищам, который возможен из-за опубликованных портов.",
+        "placeholder": "",
+        "thumbnail": "./public/content/images/thumbnail.stride.jpg",
+        "cells": [
+          {
+            "position": {
+              "x": 20,
+              "y": 5
+            },
+            "size": {
+              "width": 360,
+              "height": 80
+            },
+            "attrs": {
+              "text": {
+                "text": "Bank Microservice — DFD (уровень 1), STRIDE.\nКрасным — элементы с открытыми угрозами.\nTOP-1/2/3 — наиболее критичные угрозы.\n22 карточки = 13 корневых причин (RC-1…13)"
+              }
+            },
+            "visible": true,
+            "shape": "td-text-block",
+            "zIndex": 1,
+            "id": "2930519f-34f1-5c7f-b291-e31eb18494ea",
+            "data": {
+              "type": "tm.Text",
+              "name": "Bank Microservice — DFD (уровень 1), STRIDE.\nКрасным — элементы с открытыми угрозами.\nTOP-1/2/3 — наиболее критичные угрозы.\n22 карточки = 13 корневых причин (RC-1…13)",
+              "hasOpenThreats": false
+            }
+          },
+          {
+            "position": {
+              "x": 240,
+              "y": 90
+            },
+            "size": {
+              "width": 980,
+              "height": 610
+            },
+            "attrs": {
+              "label": {
+                "text": "Граница доверия: Docker-хост / сеть compose"
+              }
+            },
+            "visible": true,
+            "shape": "trust-boundary-box",
+            "zIndex": -50,
+            "id": "1d1a19c1-3259-53d6-a301-50669a23538a",
+            "data": {
+              "type": "tm.BoundaryBox",
+              "name": "Граница доверия: Docker-хост / сеть compose",
+              "description": "Хост с docker-compose. Порты 8000, 5432, 6379 опубликованы на всех интерфейсах хоста, поэтому граница фактически проницаема для слоя данных.",
+              "isTrustBoundary": true,
+              "hasOpenThreats": false
+            }
+          },
+          {
+            "position": {
+              "x": 800,
+              "y": 130
+            },
+            "size": {
+              "width": 400,
+              "height": 530
+            },
+            "attrs": {
+              "label": {
+                "text": "Граница доверия: слой данных"
+              }
+            },
+            "visible": true,
+            "shape": "trust-boundary-box",
+            "zIndex": -50,
+            "id": "e0c336e7-990f-5d67-92f7-842810bd6149",
+            "data": {
+              "type": "tm.BoundaryBox",
+              "name": "Граница доверия: слой данных",
+              "description": "PostgreSQL и Redis. Должны быть доступны только API; сейчас доступны напрямую из сети.",
+              "isTrustBoundary": true,
+              "hasOpenThreats": false
+            }
+          },
+          {
+            "position": {
+              "x": 20,
+              "y": 300
+            },
+            "size": {
+              "width": 170,
+              "height": 80
+            },
+            "attrs": {
+              "text": {
+                "text": "Клиент банка\n(веб/мобильное\nприложение)"
+              },
+              "body": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "strokeDasharray": null
+              }
+            },
+            "visible": true,
+            "shape": "actor",
+            "zIndex": 5,
+            "ports": {
+              "groups": {
+                "top": {
+                  "position": "top",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "position": "right",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "bottom": {
+                  "position": "bottom",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "left": {
+                  "position": "left",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                }
+              },
+              "items": [
+                {
+                  "group": "top",
+                  "id": "74cc88cf-0e92-56a8-b466-f605ee7f5613"
+                },
+                {
+                  "group": "right",
+                  "id": "23784eb1-5f13-5167-9a77-a1ad03fa1176"
+                },
+                {
+                  "group": "bottom",
+                  "id": "e435be53-363a-50a2-8b7b-6b553b3bcd33"
+                },
+                {
+                  "group": "left",
+                  "id": "484c67c5-e471-5633-994e-48b0385f5f1d"
+                }
+              ]
+            },
+            "id": "7cacb10f-09e9-5bfd-aeea-dd8ee09aa92b",
+            "data": {
+              "type": "tm.Actor",
+              "name": "Клиент банка\n(веб/мобильное\nприложение)",
+              "description": "Внешняя сущность. Вызывает API по HTTP, передаёт X-User-Id.",
+              "isTrustBoundary": false,
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "providesAuthentication": false,
+              "threats": [
+                {
+                  "id": "9844fa13-2751-5448-977a-b94e3713d16b",
+                  "number": 4,
+                  "title": "Подмена личности клиента: аутентификации нет, X-User-Id задаёт клиент",
+                  "type": "Spoofing",
+                  "status": "Open",
+                  "severity": "Critical",
+                  "score": "",
+                  "description": "[RC-1] Сервис принимает любой целочисленный X-User-Id (dynamic_checks.log, шаг 1). Сценарий эксплуатации — #1 (TOP-1).",
+                  "mitigation": "Рекомендации: см. #1: OIDC/JWT на шлюзе, user_id = sub. Уровень: код + инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            }
+          },
+          {
+            "position": {
+              "x": 1280,
+              "y": 330
+            },
+            "size": {
+              "width": 180,
+              "height": 80
+            },
+            "attrs": {
+              "text": {
+                "text": "Узел сети хоста /\nадминистратор"
+              },
+              "body": {
+                "stroke": "#333333",
+                "strokeWidth": 1.5,
+                "strokeDasharray": null
+              }
+            },
+            "visible": true,
+            "shape": "actor",
+            "zIndex": 5,
+            "ports": {
+              "groups": {
+                "top": {
+                  "position": "top",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "position": "right",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "bottom": {
+                  "position": "bottom",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "left": {
+                  "position": "left",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                }
+              },
+              "items": [
+                {
+                  "group": "top",
+                  "id": "da8b8939-5715-5d9e-9f48-ed2f552fd8be"
+                },
+                {
+                  "group": "right",
+                  "id": "e83b0aa9-5f40-5265-b5b2-c5fc3d0b3034"
+                },
+                {
+                  "group": "bottom",
+                  "id": "0b1b0edf-578d-5b41-b935-968474025c90"
+                },
+                {
+                  "group": "left",
+                  "id": "f4b3f7b7-aeb6-523d-affb-6d3e8575c3b5"
+                }
+              ]
+            },
+            "id": "2b6182ae-a47f-598a-a2a6-f4cecd19ddd3",
+            "data": {
+              "type": "tm.Actor",
+              "name": "Узел сети хоста /\nадминистратор",
+              "description": "Любой узел, имеющий сетевой доступ к хосту: администратор, другой сервис, злоумышленник в сегменте. Легитимного сценария прямого доступа нет — поток возникает из-за конфигурации.",
+              "isTrustBoundary": false,
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "providesAuthentication": false,
+              "threats": [],
+              "hasOpenThreats": false
+            }
+          },
+          {
+            "position": {
+              "x": 520,
+              "y": 280
+            },
+            "size": {
+              "width": 170,
+              "height": 170
+            },
+            "attrs": {
+              "text": {
+                "text": "Bank Microservice API\n(FastAPI + uvicorn\n:8000)"
+              },
+              "body": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "strokeDasharray": null
+              }
+            },
+            "visible": true,
+            "shape": "process",
+            "zIndex": 5,
+            "ports": {
+              "groups": {
+                "top": {
+                  "position": "top",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "position": "right",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "bottom": {
+                  "position": "bottom",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "left": {
+                  "position": "left",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                }
+              },
+              "items": [
+                {
+                  "group": "top",
+                  "id": "41c078ba-8e1b-5c92-abd2-c6f938eadc56"
+                },
+                {
+                  "group": "right",
+                  "id": "3edd06d9-0a01-51bf-8c2b-d73fb2c5d76f"
+                },
+                {
+                  "group": "bottom",
+                  "id": "c95d82b9-fa38-54a4-b738-ac9357645389"
+                },
+                {
+                  "group": "left",
+                  "id": "4fb18fa3-047a-5438-ba7e-b4c40d508be5"
+                }
+              ]
+            },
+            "id": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b",
+            "data": {
+              "type": "tm.Process",
+              "name": "Bank Microservice API\n(FastAPI + uvicorn\n:8000)",
+              "description": "Backend REST API: POST /transfer, GET /transactions. Python 3, FastAPI 0.115.0, asyncpg, redis-py. Идентификация по заголовку X-User-Id.",
+              "outOfScope": false,
+              "isTrustBoundary": false,
+              "reasonOutOfScope": "",
+              "handlesCardPayment": false,
+              "handlesGoodsOrServices": false,
+              "isWebApplication": true,
+              "privilegeLevel": "",
+              "threats": [
+                {
+                  "id": "fd2d452c-91e5-50da-8935-7a9dd090d1f4",
+                  "number": 1,
+                  "title": "TOP-1. IDOR/BOLA: перевод с чужого счёта и чтение чужой истории через подмену X-User-Id",
+                  "type": "Elevation of privilege",
+                  "status": "Open",
+                  "severity": "Critical",
+                  "score": "9.1 (Critical)",
+                  "description": "[RC-1] Причина: идентичность берётся из клиентского заголовка X-User-Id без проверки (app/security.py:3-13); проверка владения (app/crud.py:5-13) сравнивает счёт с этим же значением.\nПредпосылки: сетевой доступ к API, без учётной записи; ID последовательные.\nОбъекты: для перевода — счёт списания и его владелец; для истории — исходящие операции счетов выбранного владельца (JOIN по счёту отправителя, не более limit ≤ 100 за запрос; app/crud.py:52-65).\nПодтверждено: X-User-Id: 1 → перевод со счёта 1 и одна исходящая операция пользователя 1 (dynamic_checks.log:13-14, 17-18).\nИмпакт: C — High (исходящие операции любого владельца при подстановке его X-User-Id), I — High (списание с любого счёта), A — нет. CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N.\nБизнес: хищение средств, раскрытие банковской тайны. Связано: #4 (та же причина).",
+                  "mitigation": "Рекомендации: Т, код + шлюз: OIDC/JWT, user_id = sub, X-User-Id отклоняется.\nТ, код: владение в том же SQL, 404 для чужих объектов.\nА: API-шлюз, второй фактор для перевода, UUID счетов.\nП: тесты A→B как gate в CI, DAST.\nКритерий: чужой субъект → 404, 0 изменений в БД.\nПолная таблица мер — threat-register.md.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "15399193-f051-5d54-a7b4-9d381ab9b31b",
+                  "number": 2,
+                  "title": "TOP-2. Race condition (TOCTOU) в переводе: списание сверх остатка, отрицательный баланс",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Critical",
+                  "score": "7.5 (High); бизнес: Critical",
+                  "description": "[RC-2] Причина: баланс читается без блокировки (app/crud.py:22), проверка bal < amount — в приложении, затем отдельный UPDATE (app/crud.py:32); в схеме нет CHECK (balance_cents >= 0).\nПредпосылки: параллельные запросы со своего счёта — угроза остаётся после исправления TOP-1.\nПодтверждено: отрицательный остаток отправителя — race_check.log: 4 из 10 раундов (до −30000); дополнительный прогон race_invariant_check.log: 8 из 10. Получатель зачисляется по каждой успешной операции — необеспеченные зачисления на сумму отрицательного остатка. Сумма остатков по всем счетам в раунде не менялась: нарушен инвариант неотрицательного баланса, а не сохранения суммы. Вывод необеспеченных средств не проверялся.\nИмпакт: I — High, C/A — нет. CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N (PR:L после TOP-1 → 6.5).\nБизнес: риск финансовых потерь, расхождение остатков. Связано: #17.",
+                  "mitigation": "Рекомендации: Т, код: условный UPDATE … WHERE balance >= amount RETURNING или SELECT … FOR UPDATE.\nТ, схема БД: CHECK (balance_cents >= 0), FK.\nА: Idempotency-Key + UNIQUE, журнал проводок и сверка.\nП: конкурентный тест в CI, алерт на минус.\nКритерий: race_check 10×30 — 0 отрицательных остатков.\nПолная таблица мер — threat-register.md.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "dc05b380-2283-50c3-943d-df15444e5057",
+                  "number": 5,
+                  "title": "Потенциальная регрессия к SQL Injection при изменении сборки SQL (search, limit)",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "н/п: уязвимость не обнаружена",
+                  "description": "[RC-5] Наблюдение: запрос собирается f-строками (app/crud.py:61, 64); Semgrep: bank.dynamic-sql-fstring, asyncpg-sqli (app/crud.py:66).\nДействующая защита (в коде): в f-строку попадают только номера плейсхолдеров $2/$3, значения search и limit передаются bind-параметрами asyncpg.\nЗадание указывает на SQL Injection; для поставки с SHA-256 b34bebec…6458b3 значения пользователя передаются параметрами conn.fetch(sql, *params) (app/crud.py:66) — SQL Injection в этом запросе не подтверждена; триаж Semgrep — false positive по эксплуатируемости. Лог (иллюстрация): ' OR '1'='1 → [] (dynamic_checks.log:25-26).\nРиск: правка вида f\"... '{search}'\" сделает инъекцию возможной, а работа под суперпользователем (#9) — максимальной по импакту. Связано: #9.",
+                  "mitigation": "Действует: bind-параметризация asyncpg.\nРекомендации (не внедрены): bank.dynamic-sql-fstring как блокирующий gate; запрет конкатенации SQL в стандарте кодирования; роль БД без DDL (#9); DAST (sqlmap) на стенде. Уровень: процесс + код + инфраструктура.\nКритерий: gate падает на тестовом MR с f\"...'{x}'\" в SQL.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "4be819c6-4394-5fea-ad98-0e8cd999d4bd",
+                  "number": 9,
+                  "title": "Избыточные привилегии: API работает с БД под суперпользователем postgres",
+                  "type": "Elevation of privilege",
+                  "status": "Open",
+                  "severity": "High",
+                  "score": "",
+                  "description": "[RC-4] DSN postgresql://postgres:postgres@… (docker-compose.yml:23). Компрометация API или будущая SQLi (#5) дают полные права в СУБД. Связано: #5, #14.",
+                  "mitigation": "Рекомендации: Роль приложения с правами только на accounts/transactions; владелец схемы — отдельная роль. Уровень: инфраструктура (БД) + стандарт конфигурирования.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "633d79db-4037-5eba-8654-1f711612198e",
+                  "number": 6,
+                  "title": "Недостаточный аудит: инициатор перевода не фиксируется",
+                  "type": "Repudiation",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-6] В коде нет журналирования; transactions хранит только from/to/amount (app/crud.py:35-38). Access-log uvicorn (если включён) пишет метод, путь, код ответа и IP, но не инициатора, параметры и решение авторизации. Атаки #1 и #2 трудно расследовать. Связано: #18.",
+                  "mitigation": "Рекомендации: Append-only аудит (sub, request-id, IP, решение, результат) → SIEM; алерты на всплески 403/404. Уровень: код + инфраструктура + процесс.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "2a7c56c7-a805-55d5-a749-d05d6f0e64e3",
+                  "number": 7,
+                  "title": "Отказ в обслуживании: нет rate limiting, поиск ILIKE '%…%' по CAST(id AS TEXT)",
+                  "type": "Denial of service",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-7] Нет ограничения частоты; поиск по CAST(t.id AS TEXT) ILIKE не использует индекс, '%' и '_' не экранируются (шаг 4b: search=_ возвращает всё); пул БД — 5 соединений (app/db.py:9). Нагрузочно не проверялось.",
+                  "mitigation": "Рекомендации: Rate limit и квоты на шлюзе; экранирование wildcard или поиск по точному id; statement_timeout. Уровень: инфраструктура + код.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "473dd90f-3b17-56f0-95b1-a978106c17dd",
+                  "number": 10,
+                  "title": "Уязвимые зависимости и образы без дайджеста (supply chain)",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-9] pip-audit: starlette 0.38.6 (транзитивно от fastapi==0.115.0) — 7 уникальных advisory, python-dotenv 1.0.1 — CVE-2026-28684 (evidence/pip-audit*.json). Образы postgres:16, redis:7 — плавающие теги. Достижимость CVE разбора multipart для текущих эндпоинтов не подтверждена.",
+                  "mitigation": "Рекомендации: Обновление зависимостей, lock-файл с хэшами, образы по @sha256, SCA-gate в CI, SBOM. Уровень: процесс + инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "c332a7e4-c503-5a32-a12e-86a3a314998a",
+                  "number": 8,
+                  "title": "Раскрытие информации: /docs и /openapi.json без аутентификации, оракул существования счёта",
+                  "type": "Information disclosure",
+                  "status": "Open",
+                  "severity": "Low",
+                  "score": "",
+                  "description": "[RC-8] Swagger UI и схема API доступны без аутентификации (шаг 10). Код отвечает 404 'To account not found' для отсутствующего получателя (app/crud.py:28-30) и продолжает перевод для существующего — это выдаёт существование счёта (подробно — #13). Связано: #13.",
+                  "mitigation": "Рекомендации: docs_url/openapi_url = None вне dev; единый ответ об ошибке перевода. Уровень: код.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            }
+          },
+          {
+            "position": {
+              "x": 900,
+              "y": 180
+            },
+            "size": {
+              "width": 250,
+              "height": 85
+            },
+            "attrs": {
+              "text": {
+                "text": "PostgreSQL 16\n(БД bank: accounts, transactions)"
+              },
+              "topLine": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "strokeDasharray": null
+              },
+              "bottomLine": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "strokeDasharray": null
+              }
+            },
+            "visible": true,
+            "shape": "store",
+            "zIndex": 5,
+            "ports": {
+              "groups": {
+                "top": {
+                  "position": "top",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "position": "right",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "bottom": {
+                  "position": "bottom",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "left": {
+                  "position": "left",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                }
+              },
+              "items": [
+                {
+                  "group": "top",
+                  "id": "2afd22d8-a239-5103-b9d5-b2a7cd936414"
+                },
+                {
+                  "group": "right",
+                  "id": "88539536-ed33-56a7-a92c-b2ec3e6a5fbe"
+                },
+                {
+                  "group": "bottom",
+                  "id": "8921dac7-40f8-5ccd-9faa-a67526b915dc"
+                },
+                {
+                  "group": "left",
+                  "id": "a5aa3609-48c8-50f4-a0e6-f47818ccda1f"
+                }
+              ]
+            },
+            "id": "00f4ea11-a3ea-5afe-90b1-086d8ab1e610",
+            "data": {
+              "type": "tm.Store",
+              "name": "PostgreSQL 16\n(БД bank: accounts, transactions)",
+              "description": "Счета (owner_user_id, balance_cents) и журнал переводов. Порт 5432 опубликован, учётка postgres/postgres.",
+              "outOfScope": false,
+              "isTrustBoundary": false,
+              "reasonOutOfScope": "",
+              "isALog": false,
+              "isEncrypted": false,
+              "isSigned": false,
+              "storesCredentials": true,
+              "storesInventory": false,
+              "threats": [
+                {
+                  "id": "5a663f58-03ff-5db2-b454-0e0fb4c18bcc",
+                  "number": 3,
+                  "title": "TOP-3. Доступ к PostgreSQL и Redis в обход API: опубликованные порты, пароль по умолчанию, Redis без пароля",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Critical",
+                  "score": "9.8 (Critical) при доступе из внешней сети",
+                  "description": "[RC-3] Причина (microservice/docker-compose.yml): порты 5432 и 6379 опубликованы на всех интерфейсах (стр. 10-11, 17-18), учётка postgres/postgres (стр. 7-8, 23), Redis без пароля (стр. 24).\nПредпосылки: сетевой доступ к хосту.\nПодтверждено: конфигурацией и Semgrep (bank.compose-*); влияние записи в Redis на ответ API — шаг 7. Подключение к опубликованным портам не выполнялось: стенд работал без Docker.\nИмпакт: C/I/A — High: чтение и изменение балансов и истории, сброс кэша в обход проверок и журналов API. CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H (AV:A = 8.8 для внутреннего сегмента).\nБизнес: компрометация ядра переводов, простой. Связано: #15, #20, #21, #22.",
+                  "mitigation": "Рекомендации: А, инфраструктура: убрать ports у postgres/redis, внутренняя сеть, bastion.\nТ, конфигурация: секреты из secret store, роль с минимальными правами, Redis ACL.\nТ: TLS к PostgreSQL и Redis.\nП: gate bank.compose-*, сканирование периметра.\nКритерий: 5432/6379 извне — closed/filtered.\nПолная таблица мер — threat-register.md.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "b5878594-a19e-5b8b-9892-e285ddc0e11e",
+                  "number": 17,
+                  "title": "Нет ограничений целостности в схеме (CHECK balance >= 0, внешние ключи)",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-2] balance_cents может стать отрицательным, transactions не ссылается на accounts (app/db.py:15-30): БД не страхует логические ошибки. Связано: #2.",
+                  "mitigation": "Рекомендации: CHECK, FOREIGN KEY, миграции с ревью. Уровень: схема БД + процесс.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "b0479c98-145d-53dc-8d0b-008f416f05fe",
+                  "number": 18,
+                  "title": "Аудит изменений на уровне СУБД не настроен в предоставленной конфигурации",
+                  "type": "Repudiation",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-6] В docker-compose нет pgaudit и триггеров аудита; прямые изменения (#3) не фиксируются. Есть ли аудит в целевой инфраструктуре, по материалам неизвестно. Связано: #6.",
+                  "mitigation": "Рекомендации: pgaudit (write, ddl, role) → SIEM. Уровень: инфраструктура + процесс.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "167d5d2e-2147-58bd-9f21-740b8696061c",
+                  "number": 19,
+                  "title": "Не подтверждены механизмы резервного копирования и шифрования данных при хранении",
+                  "type": "Information disclosure",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-13, потенциальный инфраструктурный риск] В docker-compose том pgdata объявлен без параметров шифрования, сведений о резервном копировании в материалах нет. Отсутствие этих мер в инфраструктуре банка НЕ установлено.\nДля подтверждения нужны: конфигурация хранения (тома, диски, LUKS/KMS), политика резервного копирования и шифрования бэкапов, процедуры и протоколы восстановления (RPO/RTO).",
+                  "mitigation": "Рекомендации: Запросить и проверить перечисленные данные; если мер нет — шифрование томов и бэкапов, регулярное тестовое восстановление. Уровень: инфраструктура + процесс.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            }
+          },
+          {
+            "position": {
+              "x": 900,
+              "y": 500
+            },
+            "size": {
+              "width": 250,
+              "height": 85
+            },
+            "attrs": {
+              "text": {
+                "text": "Redis 7\n(кэш истории tx:{uid}:{limit}:{search})"
+              },
+              "topLine": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "strokeDasharray": null
+              },
+              "bottomLine": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "strokeDasharray": null
+              }
+            },
+            "visible": true,
+            "shape": "store",
+            "zIndex": 5,
+            "ports": {
+              "groups": {
+                "top": {
+                  "position": "top",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "right": {
+                  "position": "right",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "bottom": {
+                  "position": "bottom",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                },
+                "left": {
+                  "position": "left",
+                  "attrs": {
+                    "circle": {
+                      "r": 4,
+                      "magnet": true,
+                      "stroke": "#5F95FF",
+                      "strokeWidth": 1,
+                      "fill": "#fff",
+                      "style": {
+                        "visibility": "hidden"
+                      }
+                    }
+                  }
+                }
+              },
+              "items": [
+                {
+                  "group": "top",
+                  "id": "d68e89b8-be49-59d0-852c-a200ad963850"
+                },
+                {
+                  "group": "right",
+                  "id": "3e6d6e1c-bd5b-59fc-9766-7a25cf294ff3"
+                },
+                {
+                  "group": "bottom",
+                  "id": "e010a878-7a88-5567-af25-9f667913be91"
+                },
+                {
+                  "group": "left",
+                  "id": "b5d9d93a-ebc9-5d53-847b-46d728074811"
+                }
+              ]
+            },
+            "id": "dcfeb029-6b27-537b-a4d9-ef21826a4828",
+            "data": {
+              "type": "tm.Store",
+              "name": "Redis 7\n(кэш истории tx:{uid}:{limit}:{search})",
+              "description": "Кэш выдачи истории транзакций. Без аутентификации, порт 6379 опубликован.",
+              "outOfScope": false,
+              "isTrustBoundary": false,
+              "reasonOutOfScope": "",
+              "isALog": false,
+              "isEncrypted": false,
+              "isSigned": false,
+              "storesCredentials": false,
+              "storesInventory": false,
+              "threats": [
+                {
+                  "id": "5f05ff08-7f57-5433-a0a6-abec20083d98",
+                  "number": 20,
+                  "title": "Сброс и подмена кэша без аутентификации (FLUSHALL, CONFIG)",
+                  "type": "Denial of service",
+                  "status": "Open",
+                  "severity": "High",
+                  "score": "",
+                  "description": "[RC-3] Redis без пароля на опубликованном 6379: сброс данных, изменение конфигурации, исчерпание памяти. Это сценарий TOP-3 (#3) для Redis.",
+                  "mitigation": "Рекомендации: см. #3: убрать публикацию порта, ACL, отключить опасные команды, maxmemory. Уровень: инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            }
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "1. POST /transfer\n{from, to, amount}\n+ X-User-Id",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "1. POST /transfer\n{from, to, amount}\n+ X-User-Id",
+              "description": "Запрос перевода. HTTP; TLS в предоставленной конфигурации не описан.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": true,
+              "protocol": "HTTP",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "ab69bc56-826f-5248-9e8f-4eb260f8a62d",
+                  "number": 11,
+                  "title": "Запросы и X-User-Id передаются по HTTP: TLS в предоставленной конфигурации не описан",
+                  "type": "Information disclosure",
+                  "status": "Open",
+                  "severity": "High",
+                  "score": "",
+                  "description": "[RC-10] docker-compose публикует API на 8000/tcp (стр. 25-26), TLS-терминатора нет. Есть ли TLS на внешнем ingress, по материалам установить нельзя. Без TLS идентификатор и данные перевода можно перехватить и изменить.",
+                  "mitigation": "Рекомендации: TLS 1.2+/1.3 на ingress/шлюзе, HSTS, отказ от HTTP. Уровень: инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                },
+                {
+                  "id": "1e292abf-29a2-507a-8d69-01c12566c766",
+                  "number": 12,
+                  "title": "Повтор запроса перевода: повторное списание (нет идемпотентности)",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-11] Механизма нет: код не читает Idempotency-Key, уникального ключа операции в transactions нет. Подтверждено (replay_check.log): два одинаковых POST → 2 операции, списано 5000 вместо 2500; с одинаковым Idempotency-Key — так же. Связано: #7.",
+                  "mitigation": "Рекомендации: Обязательный Idempotency-Key + UNIQUE(initiator, key); повтор возвращает исходный ответ. Уровень: код + архитектура.\nКритерий: повтор с тем же ключом → тот же transaction_id, одно списание.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "defdc88d-1b1a-54c9-aaa8-5abc111ec47d",
+            "source": {
+              "cell": "7cacb10f-09e9-5bfd-aeea-dd8ee09aa92b"
+            },
+            "target": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "vertices": [
+              {
+                "x": 370,
+                "y": 285
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "#333333",
+                "strokeWidth": 1.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "2. GET /transactions\n?limit&search\n+ X-User-Id",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "2. GET /transactions\n?limit&search\n+ X-User-Id",
+              "description": "Запрос истории транзакций. HTTP; TLS в предоставленной конфигурации не описан.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": true,
+              "protocol": "HTTP",
+              "isTrustBoundary": false,
+              "threats": [],
+              "hasOpenThreats": false
+            },
+            "id": "0da2db60-d1c6-53af-8dcf-f4b2ad715d64",
+            "source": {
+              "cell": "7cacb10f-09e9-5bfd-aeea-dd8ee09aa92b"
+            },
+            "target": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "vertices": [
+              {
+                "x": 370,
+                "y": 375
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "3. Ответ: tx_id /\nистория / ошибки",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "3. Ответ: tx_id /\nистория / ошибки",
+              "description": "JSON-ответы API: transaction_id, история транзакций, ошибки 400/403/404.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": true,
+              "protocol": "HTTP",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "abe31e3d-bea7-52a9-844c-b09796edeb7a",
+                  "number": 13,
+                  "title": "Подробные ошибки в ответах выдают существование счетов",
+                  "type": "Information disclosure",
+                  "status": "Open",
+                  "severity": "Low",
+                  "score": "",
+                  "description": "[RC-8] Код: после проверки баланса (app/crud.py:22-26) отсутствующий получатель даёт 404 (стр. 28-30), существующий — перевод выполняется (стр. 32-38). Стенд: счёт списания 2, сумма 1 — получатель 999 → 404 (dynamic_checks.log:35-36), получатель 1 → HTTP 200 (стр. 50-51, другой шаг). Строки 37-38 (400 Insufficient funds) иллюстрируют нехватку средств и существование получателя не доказывают. Проба существующего получателя выполняет реальный перевод. Счёт списания оракулом не является (стр. 23-24 недостижимы после проверки владения). Связано: #8.",
+                  "mitigation": "Рекомендации: Единый ответ «перевод невозможен», подробности — в журнал. Уровень: код.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "964399c9-c7a2-5a7c-9b8c-bef6111005ec",
+            "source": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "target": {
+              "cell": "7cacb10f-09e9-5bfd-aeea-dd8ee09aa92b"
+            },
+            "vertices": [
+              {
+                "x": 370,
+                "y": 470
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "4. SQL-запросы\n(перевод, история)",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "4. SQL-запросы\n(перевод, история)",
+              "description": "Проверка владения, чтение баланса, UPDATE балансов, INSERT в transactions, SELECT истории. asyncpg, пул 5 соединений; требование TLS явно не задано (asyncpg: sslmode=prefer), суперпользователь postgres.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": false,
+              "protocol": "PostgreSQL wire",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "dc11ff7b-0053-563c-b797-e2c8f42eb151",
+                  "number": 14,
+                  "title": "Канал API → PostgreSQL: требование TLS с проверкой имени сервера не задано; учётка суперпользователя в DSN",
+                  "type": "Information disclosure",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-10, RC-4] В конфигурации сервиса явно не задано требование TLS с проверкой имени сервера: create_pool без ssl= (app/db.py:9), в DSN нет sslmode (docker-compose.yml:23); asyncpg 0.29.0 для TCP тогда использует sslmode=prefer (без проверки сертификата). Фактическое шифрование соединения не проверено. Отдельно: учётные данные суперпользователя в DSN (RC-4, #9).",
+                  "mitigation": "Рекомендации: sslmode=verify-full с проверкой сертификата сервера; секреты из secret store; роль с минимальными правами. Уровень: инфраструктура + код.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "b2639e4d-18e0-5d34-beb7-edc2d4d72fa1",
+            "source": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "target": {
+              "cell": "00f4ea11-a3ea-5afe-90b1-086d8ab1e610"
+            },
+            "vertices": [
+              {
+                "x": 760,
+                "y": 215
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "#333333",
+                "strokeWidth": 1.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "5. Результаты\nзапросов",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "5. Результаты\nзапросов",
+              "description": "Баланс, признак владения, строки transactions.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": false,
+              "protocol": "PostgreSQL wire",
+              "isTrustBoundary": false,
+              "threats": [],
+              "hasOpenThreats": false
+            },
+            "id": "01b25205-2058-5a8d-b146-b545aa27b4fe",
+            "source": {
+              "cell": "00f4ea11-a3ea-5afe-90b1-086d8ab1e610"
+            },
+            "target": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "vertices": [
+              {
+                "x": 790,
+                "y": 310
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "6. GET/DEL tx:*",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "6. GET/DEL tx:*",
+              "description": "GET tx:{uid}:{limit}:{search}; после перевода DEL tx:{uid}.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": false,
+              "protocol": "RESP",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "59e2d874-f1cd-5e4e-bf74-3abf67ea00ce",
+                  "number": 15,
+                  "title": "Канал API → Redis без аутентификации и TLS",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-3, RC-10] REDIS_URL redis://redis:6379/0 без пароля и TLS: участник сети читает и пишет ключи tx:*. Связано: #3, #16.",
+                  "mitigation": "Рекомендации: ACL-пользователь Redis, rediss://, изоляция сети. Уровень: инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "b21dd976-5aa0-5855-94d0-ce01fbcdc2e3",
+            "source": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "target": {
+              "cell": "dcfeb029-6b27-537b-a4d9-ef21826a4828"
+            },
+            "vertices": [
+              {
+                "x": 760,
+                "y": 470
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "7. Значение\nкэша",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "7. Значение\nкэша",
+              "description": "При попадании в кэш API возвращает пустой список.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": false,
+              "protocol": "RESP",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "235cc995-2baa-53b1-990f-821f3cab7314",
+                  "number": 16,
+                  "title": "Cache poisoning: подмена ключа tx:* скрывает историю клиента",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Medium",
+                  "score": "",
+                  "description": "[RC-12; предпосылка — RC-3] При наличии ключа list_transactions возвращает [] без проверки (app/crud.py:46-48); инвалидация удаляет tx:{uid}, а читаются tx:{uid}:{limit}:{search} (app/crud.py:40, 45). Подтверждено: SET tx:1:20: x → пустая история (шаги 7, 7b).",
+                  "mitigation": "Рекомендации: Единая функция ключа, версионная инвалидация; не кэшировать финансовые данные без необходимости; аутентификация Redis. Уровень: код + инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "0b8909ff-5521-5165-ac74-e73bca9478d1",
+            "source": {
+              "cell": "dcfeb029-6b27-537b-a4d9-ef21826a4828"
+            },
+            "target": {
+              "cell": "d213ca2d-ef36-5bab-9634-68f0c6b5e28b"
+            },
+            "vertices": [
+              {
+                "x": 780,
+                "y": 580
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "8. Прямое подключение\n:5432 postgres/postgres",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "8. Прямое подключение\n:5432 postgres/postgres",
+              "description": "Возможен из-за ports: 5432:5432.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": true,
+              "protocol": "PostgreSQL wire",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "5aedfd7b-aad2-5c9e-8a08-6b6d0135c931",
+                  "number": 21,
+                  "title": "Подключение к PostgreSQL с учётной записью по умолчанию postgres/postgres",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "Critical",
+                  "score": "",
+                  "description": "[RC-3] Поток существует из-за ports: 5432:5432 и пароля по умолчанию. Сценарий TOP-3 (#3).",
+                  "mitigation": "Рекомендации: см. #3. Уровень: инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "1c29ea76-8ad6-5680-8344-cd1db966251b",
+            "source": {
+              "cell": "2b6182ae-a47f-598a-a2a6-f4cecd19ddd3"
+            },
+            "target": {
+              "cell": "00f4ea11-a3ea-5afe-90b1-086d8ab1e610"
+            },
+            "vertices": [
+              {
+                "x": 1250,
+                "y": 250
+              }
+            ]
+          },
+          {
+            "shape": "flow",
+            "attrs": {
+              "line": {
+                "stroke": "red",
+                "strokeWidth": 2.5,
+                "targetMarker": {
+                  "name": "block"
+                },
+                "sourceMarker": {
+                  "name": ""
+                },
+                "strokeDasharray": null
+              }
+            },
+            "width": 200,
+            "height": 100,
+            "zIndex": 10,
+            "labels": [
+              {
+                "markup": [
+                  {
+                    "tagName": "ellipse",
+                    "selector": "labelBody"
+                  },
+                  {
+                    "tagName": "text",
+                    "selector": "labelText"
+                  }
+                ],
+                "attrs": {
+                  "labelText": {
+                    "text": "9. Прямое подключение\n:6379 без auth",
+                    "textAnchor": "middle",
+                    "textVerticalAnchor": "middle"
+                  },
+                  "labelBody": {
+                    "ref": "labelText",
+                    "refRx": "50%",
+                    "refRy": "60%",
+                    "fill": "#fff",
+                    "strokeWidth": 0
+                  }
+                },
+                "position": {
+                  "distance": 0.5,
+                  "args": {
+                    "keepGradient": true,
+                    "ensureLegibility": true
+                  }
+                }
+              }
+            ],
+            "connector": "smooth",
+            "data": {
+              "type": "tm.Flow",
+              "name": "9. Прямое подключение\n:6379 без auth",
+              "description": "Возможен из-за ports: 6379:6379.",
+              "outOfScope": false,
+              "reasonOutOfScope": "",
+              "isBidirectional": false,
+              "isEncrypted": false,
+              "isPublicNetwork": true,
+              "protocol": "RESP",
+              "isTrustBoundary": false,
+              "threats": [
+                {
+                  "id": "c33e8cf9-a8ea-5dd7-a255-d600d0b400c9",
+                  "number": 22,
+                  "title": "Подключение к Redis без аутентификации",
+                  "type": "Tampering",
+                  "status": "Open",
+                  "severity": "High",
+                  "score": "",
+                  "description": "[RC-3] Поток существует из-за ports: 6379:6379. Сценарий TOP-3 (#3).",
+                  "mitigation": "Рекомендации: см. #3. Уровень: инфраструктура.",
+                  "modelType": "STRIDE",
+                  "new": false
+                }
+              ],
+              "hasOpenThreats": true
+            },
+            "id": "a5bd8fb6-8f90-53e3-b3a5-6fc4f79640a6",
+            "source": {
+              "cell": "2b6182ae-a47f-598a-a2a6-f4cecd19ddd3"
+            },
+            "target": {
+              "cell": "dcfeb029-6b27-537b-a4d9-ef21826a4828"
+            },
+            "vertices": [
+              {
+                "x": 1250,
+                "y": 500
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "diagramTop": 1,
+    "reviewer": "",
+    "threatTop": 22
+  }
+}

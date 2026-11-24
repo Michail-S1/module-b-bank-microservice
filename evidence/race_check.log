@@ -1,0 +1,10 @@
+round 1: HTTP200=4/30, new tx rows=4, balance_cents=-30000
+round 2: HTTP200=1/30, new tx rows=1, balance_cents=0
+round 3: HTTP200=2/30, new tx rows=2, balance_cents=-10000
+round 4: HTTP200=2/30, new tx rows=2, balance_cents=-10000
+round 5: HTTP200=1/30, new tx rows=1, balance_cents=0
+round 6: HTTP200=2/30, new tx rows=2, balance_cents=-10000
+round 7: HTTP200=1/30, new tx rows=1, balance_cents=0
+round 8: HTTP200=1/30, new tx rows=1, balance_cents=0
+round 9: HTTP200=1/30, new tx rows=1, balance_cents=0
+round 10: HTTP200=1/30, new tx rows=1, balance_cents=0

@@ -1,0 +1,38 @@
+# replay_check.sh — 2026-11-24T14:19:56Z (UTC), API=http://127.0.0.1:18000
+### 0. Подготовка тестовых счетов
+  accounts (id | owner | balance_cents):
+    10|10|100000
+    11|11|0
+  transactions from 10 -> 11: 0
+
+### B. Два одинаковых POST /transfer без Idempotency-Key
+$ curl -X POST http://127.0.0.1:18000/transfer -H 'X-User-Id: 10'  -d '{"from_account_id":10,"to_account_id":11,"amount_cents":2500}'   # запрос 1
+{"status":"ok","transaction_id":20}  -> HTTP 200
+$ curl -X POST http://127.0.0.1:18000/transfer -H 'X-User-Id: 10'  -d '{"from_account_id":10,"to_account_id":11,"amount_cents":2500}'   # запрос 2 (байт-в-байт тот же)
+{"status":"ok","transaction_id":21}  -> HTTP 200
+  accounts (id | owner | balance_cents):
+    10|10|95000
+    11|11|5000
+  transactions from 10 -> 11: 2
+  ожидание при наличии идемпотентности: 1 операция, баланс 10 = 97500
+
+### A. Два одинаковых POST с одинаковым Idempotency-Key: заголовок игнорируется?
+$ curl -X POST http://127.0.0.1:18000/transfer -H 'X-User-Id: 10' -H Idempotency-Key: 3f6c1d2e-replay-test -d '{"from_account_id":10,"to_account_id":11,"amount_cents":2500}'   # запрос 3
+{"status":"ok","transaction_id":22}  -> HTTP 200
+$ curl -X POST http://127.0.0.1:18000/transfer -H 'X-User-Id: 10' -H Idempotency-Key: 3f6c1d2e-replay-test -d '{"from_account_id":10,"to_account_id":11,"amount_cents":2500}'   # запрос 4 (тот же ключ)
+{"status":"ok","transaction_id":23}  -> HTTP 200
+  accounts (id | owner | balance_cents):
+    10|10|90000
+    11|11|10000
+  transactions from 10 -> 11: 4
+
+### Строки transactions 10 -> 11
+  20|10|11|2500|2026-11-24 14:19:56.391993+00
+  21|10|11|2500|2026-11-24 14:19:56.406708+00
+  22|10|11|2500|2026-11-24 14:19:56.495406+00
+  23|10|11|2500|2026-11-24 14:19:56.506289+00
+
+### Итог (вычислено из БД)
+  POST отправлено: 4 (2 пары одинаковых), операций создано: 4
+  баланс 10: 100000 -> 90000 (списано 10000), баланс 11: 0 -> 10000
+  сумма по счетам 10+11 до: 100000, после: 100000

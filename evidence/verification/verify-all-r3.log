@@ -1,0 +1,5 @@
+docs-check.log           exit=0  ИТОГ: все проверки пройдены
+ci-static-check.log      exit=0  ИТОГ: все проверки пройдены
+semgrep-check.log        exit=0  ИТОГ: все проверки пройдены
+pdf-check.log            exit=0  ИТОГ: все проверки пройдены
+microservice-sha256       exit=0  совпадает с исходным архивом

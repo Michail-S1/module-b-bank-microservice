@@ -1,0 +1,298 @@
+# Кастомные правила Semgrep для банковского микросервиса (FastAPI + asyncpg + Redis + docker-compose).
+# Запуск: semgrep scan --config semgrep/custom-rules.yml --metrics=off <repo>
+rules:
+  # ---------------- Идентификация / авторизация ----------------
+  - id: bank.identity-from-client-header
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Идентификатор пользователя берётся из клиентского заголовка ($X) без проверки подлинности
+      (нет JWT/OAuth2/mTLS). Любой клиент может выдать себя за другого пользователя, подставив его ID;
+      все проверки владения (owner_user_id = user_id) становятся обходимыми (spoofing -> IDOR).
+    patterns:
+      - pattern-either:
+          - pattern-inside: |
+              async def $F(..., $X: $T = Header(...), ...):
+                  ...
+          - pattern-inside: |
+              def $F(..., $X: $T = Header(...), ...):
+                  ...
+      - pattern: return int($X)
+    metadata:
+      cwe: ["CWE-290: Authentication Bypass by Spoofing", "CWE-639: Authorization Bypass Through User-Controlled Key"]
+      owasp: ["A01:2021 - Broken Access Control", "A07:2021 - Identification and Authentication Failures", "API1:2023 - BOLA", "API2:2023 - Broken Authentication"]
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      category: security
+
+  # ---------------- SQL ----------------
+  - id: bank.dynamic-sql-fstring
+    languages: [python]
+    severity: WARNING
+    message: >-
+      SQL-запрос собирается конкатенацией f-строк ($SQL). В текущей версии в строку подставляются
+      только номера плейсхолдеров ($2, $3), а значения идут bind-параметрами — триаж обязателен.
+      Шаблон опасен регрессией: любая правка вида f"... '{search}'" даёт SQL Injection.
+    patterns:
+      - pattern-either:
+          - pattern: $SQL += f"..."
+          - pattern: $SQL = f"..."
+          - pattern: $SQL = "..." + $Y
+          - pattern: $SQL += "..." + $Y
+      - metavariable-regex:
+          metavariable: $SQL
+          regex: (?i).*(sql|query|stmt).*
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      owasp: ["A03:2021 - Injection"]
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: HIGH
+      category: security
+
+  - id: bank.like-wildcard-not-escaped
+    languages: [python]
+    severity: INFO
+    message: >-
+      Пользовательский ввод вставляется в шаблон LIKE/ILIKE без экранирования '%' и '_'.
+      Не SQLi, но клиент управляет семантикой поиска (search=_ возвращает всё), что усиливает
+      выгрузку данных и нагрузку на БД (полные сканы по CAST(id AS TEXT)).
+    pattern-either:
+      - pattern: f"%{$X}%"
+      - pattern: f"{$X}%"
+      - pattern: f"%{$X}"
+    metadata:
+      cwe: ["CWE-155: Improper Neutralization of Wildcards or Matching Symbols"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: LOW
+      category: security
+
+  # ---------------- Бизнес-логика перевода ----------------
+  - id: bank.balance-check-without-row-lock
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Баланс читается без блокировки строки (нет SELECT ... FOR UPDATE / условного UPDATE ... WHERE balance >= amount),
+      затем выполняется UPDATE. При READ COMMITTED параллельные переводы проходят проверку
+      'bal < amount' одновременно -> двойное списание и отрицательный баланс (TOCTOU / race condition).
+    patterns:
+      - pattern-inside: |
+          async with $CONN.transaction():
+              ...
+      - pattern: $V = await $CONN.fetchval("$Q", ...)
+      - metavariable-regex:
+          metavariable: $Q
+          regex: (?is)^(?!.*for\s+(no\s+key\s+)?update).*select.*balance.*
+    metadata:
+      cwe: ["CWE-362: Concurrent Execution using Shared Resource with Improper Synchronization", "CWE-367: Time-of-check Time-of-use (TOCTOU) Race Condition"]
+      owasp: ["A04:2021 - Insecure Design"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      category: security
+
+  - id: bank.amount-without-upper-bound
+    languages: [python]
+    severity: INFO
+    message: >-
+      Сумма перевода ограничена только снизу (gt=0): нет верхнего лимита на операцию и бизнес-лимитов
+      (суточный лимит, антифрод). Переполнение BIGINT блокируется проверкой баланса, но вывод средств
+      одной операцией не ограничен.
+    patterns:
+      - pattern: |
+          $NAME: int = Field(gt=$N)
+      - metavariable-regex:
+          metavariable: $NAME
+          regex: (?i).*amount.*
+    metadata:
+      cwe: ["CWE-20: Improper Input Validation", "CWE-840: Business Logic Errors"]
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: MEDIUM
+      category: security
+
+  - id: bank.existence-oracle-404
+    languages: [python]
+    severity: INFO
+    message: >-
+      Отдельный ответ 404 ("$D") для несуществующего счёта, тогда как при существующем операция
+      продолжается, позволяет перебором ID определять существующие счета (enumeration).
+      ID счетов — последовательный BIGSERIAL. Достижимость ветки проверяется при триаже.
+    pattern: HTTPException(status_code=404, detail="$D")
+    metadata:
+      cwe: ["CWE-204: Observable Response Discrepancy"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: LOW
+      category: security
+
+  # ---------------- Кэш ----------------
+  - id: bank.cache-hit-returns-empty
+    languages: [python]
+    severity: WARNING
+    message: >-
+      При попадании в кэш возвращается пустой список вместо данных; содержимое ключа не проверяется.
+      Любой, кто может записать ключ в Redis (Redis без аутентификации, порт опубликован),
+      скрывает у клиента историю операций (integrity/availability), а при исправлении логики —
+      подменяет её (cache poisoning).
+    patterns:
+      - pattern: |
+          $C = await $R.get($K)
+          if $C:
+              return []
+    metadata:
+      cwe: ["CWE-345: Insufficient Verification of Data Authenticity", "CWE-840: Business Logic Errors"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: MEDIUM
+      category: security
+
+  # ---------------- Транспорт / конфигурация ----------------
+  - id: bank.asyncpg-pool-without-tls
+    languages: [python]
+    severity: INFO
+    message: >-
+      Пул asyncpg создаётся без параметра ssl=. Если и DSN/окружение не задают sslmode=verify-full,
+      требование TLS с проверкой имени сервера не установлено: asyncpg 0.29.0 для TCP по умолчанию
+      использует sslmode=prefer (TLS, только если сервер его поддерживает; откат на открытый канал,
+      без проверки сертификата). Правило фиксирует настройку клиента, а не факт передачи открытым
+      текстом — фактическое шифрование проверяется отдельно.
+    patterns:
+      - pattern: asyncpg.create_pool(...)
+      - pattern-not: asyncpg.create_pool(..., ssl=$S, ...)
+    metadata:
+      cwe: ["CWE-319: Cleartext Transmission of Sensitive Information", "CWE-297: Improper Validation of Certificate with Host Mismatch"]
+      confidence: MEDIUM
+      likelihood: LOW
+      impact: MEDIUM
+      category: security
+
+  - id: bank.fastapi-docs-exposed
+    languages: [python]
+    severity: INFO
+    message: >-
+      FastAPI создаётся с настройками по умолчанию: /docs, /redoc и /openapi.json доступны без аутентификации
+      (раскрытие поверхности атаки в prod). Отключайте docs_url/openapi_url вне dev.
+    patterns:
+      - pattern: FastAPI(...)
+      - pattern-not: FastAPI(..., docs_url=None, ...)
+      - pattern-not: FastAPI(..., openapi_url=None, ...)
+    metadata:
+      cwe: ["CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"]
+      owasp: ["API9:2023 - Improper Inventory Management"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: LOW
+      category: security
+
+  - id: bank.compose-hardcoded-db-password
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include: ["docker-compose*.yml", "docker-compose*.yaml", "compose*.yml", "compose*.yaml"]
+    message: >-
+      Пароль СУБД задан литералом в docker-compose (POSTGRES_PASSWORD, к тому же дефолтный 'postgres').
+      Секреты должны приходить из .env/secret store (Docker secrets, Vault) и не попадать в VCS.
+    pattern-regex: (?m)^\s*POSTGRES_PASSWORD:\s*(?!\$\{)\S+
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials", "CWE-1393: Use of Default Password"]
+      owasp: ["A07:2021 - Identification and Authentication Failures"]
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      category: security
+
+  - id: bank.compose-credentials-in-dsn
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include: ["docker-compose*.yml", "docker-compose*.yaml", "*.env", "*.py"]
+    message: Учётные данные зашиты в строку подключения (DSN). Вынесите в секреты, используйте отдельную роль приложения с минимальными правами (не суперпользователь postgres).
+    pattern-regex: postgres(?:ql)?://[^:\s/@]+:[^@\s$]+@
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials", "CWE-250: Execution with Unnecessary Privileges"]
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      category: security
+
+  - id: bank.compose-datastore-port-published
+    languages: [generic]
+    severity: ERROR
+    paths:
+      include: ["docker-compose*.yml", "docker-compose*.yaml", "compose*.yml", "compose*.yaml"]
+    message: >-
+      Порт хранилища данных (PostgreSQL 5432 / Redis 6379) опубликован на всех интерфейсах хоста.
+      БД и кэш должны быть доступны только API во внутренней сети compose (без 'ports:' или с привязкой к 127.0.0.1).
+    pattern-regex: (?m)^\s*-\s*"?(?:0\.0\.0\.0:)?(5432|6379):\d+"?
+    metadata:
+      cwe: ["CWE-668: Exposure of Resource to Wrong Sphere", "CWE-1327: Binding to an Unrestricted IP Address"]
+      confidence: HIGH
+      likelihood: HIGH
+      impact: HIGH
+      category: security
+
+  - id: bank.redis-without-auth-or-tls
+    languages: [generic]
+    severity: WARNING
+    paths:
+      include: ["docker-compose*.yml", "docker-compose*.yaml", "*.env", "*.py"]
+    message: >-
+      Подключение к Redis без пароля/ACL-пользователя и без TLS (схема redis://, нет user:pass@).
+      Redis 7 по умолчанию без аутентификации: любой узел сети читает/пишет кэш (FLUSHALL, подмена ключей tx:*).
+    pattern-regex: redis://(?![^/\s]*@)[^\s"']+
+    metadata:
+      cwe: ["CWE-306: Missing Authentication for Critical Function", "CWE-319: Cleartext Transmission of Sensitive Information"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: HIGH
+      category: security
+
+  - id: bank.compose-image-not-pinned-by-digest
+    languages: [generic]
+    severity: INFO
+    paths:
+      include: ["docker-compose*.yml", "docker-compose*.yaml", "compose*.yml", "compose*.yaml"]
+    message: Образ задан плавающим тегом без @sha256-дайджеста — сборка невоспроизводима, возможна подмена образа (supply chain).
+    pattern-regex: (?m)^\s*image:\s*[^@\s]+$
+    metadata:
+      cwe: ["CWE-494: Download of Code Without Integrity Check", "CWE-1357: Reliance on Insufficiently Trustworthy Component"]
+      confidence: HIGH
+      likelihood: LOW
+      impact: MEDIUM
+      category: security
+
+  # ---------------- Зависимости (SCA, по данным pip-audit 2026-11-24) ----------------
+  - id: bank.vulnerable-dependency-fastapi-starlette
+    languages: [generic]
+    severity: WARNING
+    paths:
+      include: ["requirements*.txt"]
+    message: >-
+      fastapi==0.115.0 тянет starlette<0.39.0 (резолвится 0.38.6), уязвимую к CVE-2024-47874 (DoS multipart, fix 0.40.0),
+      CVE-2025-54121 (fix 0.47.2) и CVE-2026-48710/48817/48818/54282/54283 (fix до 1.3.1). Обновите fastapi до версии со свежим starlette.
+    pattern-regex: (?m)^fastapi==0\.(?:\d|[1-9]\d|10\d|11[0-5])\.\d+
+    metadata:
+      cwe: ["CWE-1395: Dependency on Vulnerable Third-Party Component"]
+      references: ["https://osv.dev/vulnerability/GHSA-f96h-pmfr-66vw", "https://osv.dev/vulnerability/GHSA-2c2j-9gv5-cj73"]
+      confidence: HIGH
+      likelihood: MEDIUM
+      impact: MEDIUM
+      category: security
+
+  - id: bank.vulnerable-dependency-python-dotenv
+    languages: [generic]
+    severity: WARNING
+    paths:
+      include: ["requirements*.txt"]
+    message: python-dotenv==1.0.1 уязвим (CVE-2026-28684 / GHSA-mf9w-mj56-hr94), исправлено в 1.2.2.
+    pattern-regex: (?m)^python-dotenv==(?:0\.\d+\.\d+|1\.(?:[01]\.\d+|2\.[01]))\b
+    metadata:
+      cwe: ["CWE-1395: Dependency on Vulnerable Third-Party Component"]
+      references: ["https://osv.dev/vulnerability/GHSA-mf9w-mj56-hr94"]
+      confidence: HIGH
+      likelihood: LOW
+      impact: MEDIUM
+      category: security

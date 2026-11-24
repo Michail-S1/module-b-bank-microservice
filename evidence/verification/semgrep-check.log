@@ -1,0 +1,15 @@
+OK   raw: 25 автоматических находок (ожидалось 25)
+OK   итоговый JSON: автоматическая часть (25) совпадает с raw
+OK   итоговый JSON: 6 ручных находок с engine_kind=MANUAL (ожидалось 6)
+OK   все ручные check_id начинаются с manual.
+OK   нет manual.* среди автоматических
+OK   IDOR в итоговом JSON: ['manual.idor.transfer-from-foreign-account', 'manual.idor.read-foreign-transaction-history']
+OK   пути/строки/CWE/триаж проверены у 31 находок
+severity: {'ERROR': 8, 'WARNING': 14, 'INFO': 9}
+triage: {'confirmed': 21, 'false_positive_exploitability': 3, 'true_positive_hardening': 5, 'true_positive_low': 2}
+OK   повторный прогон: 25 находок (исходно 25)
+OK   повторный прогон: тот же набор (check_id, path, start, end)
+OK   версия Semgrep 1.186.0 = 1.186.0
+OK   ошибок сканирования: 0
+
+ИТОГ: все проверки пройдены

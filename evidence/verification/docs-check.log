@@ -1,0 +1,85 @@
+OK   JSON: threat-model/bank-microservice.threatdragon.json
+OK   YAML: microservice/docker-compose.yml
+OK   YAML: ci/security-pipeline.gitlab-ci.yml
+OK   JSON: semgrep/semgrep-results.json
+OK   JSON: semgrep/semgrep-raw.json
+OK   YAML: semgrep/custom-rules.yml
+OK   JSON: semgrep/manual-findings.json
+OK   JSON: evidence/pip-audit.json
+OK   JSON: evidence/pip-audit-full-resolution.json
+OK   JSON: semgrep/rerun/semgrep-raw-rerun.json
+OK   JSON: evidence/verification/schemas/sarif-schema-2.1.0.json
+OK   JSON: evidence/verification/schemas/gitlab-ci.schema.json
+OK   Markdown: README.md — блоки кода закрыты
+OK   ссылка README.md -> REPORT.md
+OK   ссылка README.md -> AUDIT_FIXES.md
+OK   путь README.md: `evidence/README.md`
+OK   путь README.md: `tools/build_publication.py`
+OK   путь README.md: `tools/td_render_report.py`
+OK   Markdown: AUDIT_FIXES.md — блоки кода закрыты
+OK   путь AUDIT_FIXES.md: `ci/security-pipeline.gitlab-ci.yml`
+OK   путь AUDIT_FIXES.md: `evidence/README.md`
+OK   путь AUDIT_FIXES.md: `evidence/pip-audit*.json`
+OK   путь AUDIT_FIXES.md: `evidence/pip-audit-full-resolution.json`
+OK   путь AUDIT_FIXES.md: `evidence/race_invariant_check.log`
+OK   путь AUDIT_FIXES.md: `evidence/replay_check.log`
+OK   путь AUDIT_FIXES.md: `evidence/scripts/race_invariant_check.py`
+OK   путь AUDIT_FIXES.md: `evidence/scripts/replay_check.sh`
+OK   путь AUDIT_FIXES.md: `evidence/verification/microservice-sha256.txt`
+OK   путь AUDIT_FIXES.md: `evidence/verification/preserved-sha256.txt`
+OK   путь AUDIT_FIXES.md: `semgrep/custom-rules.yml`
+OK   путь AUDIT_FIXES.md: `semgrep/manual-findings.json`
+OK   путь AUDIT_FIXES.md: `semgrep/rerun/semgrep-raw-rerun.json`
+OK   путь AUDIT_FIXES.md: `semgrep/semgrep-raw.json`
+OK   путь AUDIT_FIXES.md: `semgrep/semgrep-results.json`
+OK   путь AUDIT_FIXES.md: `threat-model/*.json`
+OK   путь AUDIT_FIXES.md: `threat-model/*.pdf`
+OK   путь AUDIT_FIXES.md: `threat-model/threat-model-report.pdf`
+OK   путь AUDIT_FIXES.md: `tools/build_publication.py`
+OK   путь AUDIT_FIXES.md: `tools/build_threat_model.py`
+OK   путь AUDIT_FIXES.md: `tools/md_to_pdf.py`
+OK   путь AUDIT_FIXES.md: `tools/merge_findings.py`
+OK   путь AUDIT_FIXES.md: `tools/run_semgrep.sh`
+OK   путь AUDIT_FIXES.md: `tools/semgrep_gate.py`
+OK   путь AUDIT_FIXES.md: `tools/td_render_report.py`
+OK   путь AUDIT_FIXES.md: `tools/verify_ci.py`
+OK   путь AUDIT_FIXES.md: `tools/verify_pdf.py`
+OK   путь AUDIT_FIXES.md: `tools/verify_semgrep.py`
+OK   Markdown: REPORT.md — блоки кода закрыты
+OK   ссылка REPORT.md -> threat-model/dfd.png
+OK   путь REPORT.md: `app/crud.py`
+OK   путь REPORT.md: `app/db.py`
+OK   путь REPORT.md: `app/main.py`
+OK   путь REPORT.md: `ci/security-pipeline.gitlab-ci.yml`
+OK   путь REPORT.md: `evidence/README.md`
+OK   путь REPORT.md: `evidence/dynamic_checks.log`
+OK   путь REPORT.md: `evidence/pip-audit*.json`
+OK   путь REPORT.md: `evidence/pip-audit-full-resolution.json`
+OK   путь REPORT.md: `evidence/pip-audit.json`
+OK   путь REPORT.md: `evidence/race_check.log`
+OK   путь REPORT.md: `evidence/race_invariant_check.log`
+OK   путь REPORT.md: `evidence/replay_check.log`
+OK   путь REPORT.md: `evidence/scripts/run_app.py`
+OK   путь REPORT.md: `evidence/verification/ci-check.log`
+OK   путь REPORT.md: `evidence/verification/microservice-sha256.txt`
+OK   путь REPORT.md: `evidence/verification/semgrep-check.log`
+OK   путь REPORT.md: `microservice/requirements.txt`
+OK   путь REPORT.md: `semgrep/custom-rules.yml`
+OK   путь REPORT.md: `semgrep/rerun/semgrep-raw-rerun.json`
+OK   путь REPORT.md: `semgrep/semgrep-raw.json`
+OK   путь REPORT.md: `semgrep/semgrep-results.json`
+OK   путь REPORT.md: `threat-model/threat-register.md`
+OK   путь REPORT.md: `tools/build_threat_model.py`
+OK   путь REPORT.md: `tools/td_render_report.py`
+OK   путь REPORT.md: `tools/verify_*.py`
+OK   Markdown: threat-model/threat-register.md — блоки кода закрыты
+OK   путь threat-model/threat-register.md: `tools/build_threat_model.py`
+OK   Markdown: evidence/README.md — блоки кода закрыты
+OK   путь evidence/README.md: `scripts/checks.sh`
+OK   путь evidence/README.md: `scripts/race_check.py`
+OK   путь evidence/README.md: `scripts/race_invariant_check.py`
+OK   путь evidence/README.md: `scripts/replay_check.sh`
+OK   путь evidence/README.md: `scripts/run_app.py`
+OK   путь evidence/README.md: `verification/gate-positive-control.log`
+
+ИТОГ: все проверки пройдены

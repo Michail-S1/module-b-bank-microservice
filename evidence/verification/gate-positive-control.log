@@ -1,0 +1,12 @@
+# Положительный контроль gate (2026-11-24T20:17:27Z); тестовые файлы во временных каталогах вне комплекта
+## Trivy 0.76.2: Dockerfile с USER root
+  | FROM python:3.12
+  | USER root
+  | RUN apt-get update && apt-get install -y curl
+  exit=1
+   DS-0002 HIGH Image user should not be 'root'
+   DS-0029 HIGH 'apt-get' missing '--no-install-recommends'
+## Gitleaks 8.21.2: git-репозиторий с тестовыми токенами (пример AWS/GitHub)
+  exit=1
+   generic-api-key cfg.txt
+   github-pat cfg.txt

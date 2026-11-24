@@ -1,0 +1,140 @@
+[
+  {
+    "check_id": "manual.idor.transfer-from-foreign-account",
+    "path": "microservice/app/main.py",
+    "start_line": 13,
+    "end_line": 16,
+    "severity": "ERROR",
+    "message": "IDOR (BOLA) в POST /transfer. Объект — счёт списания from_account_id и его владелец. Владелец проверяется в _must_own_account (app/crud.py:5-13: SELECT 1 FROM accounts WHERE id=$1 AND owner_user_id=$2), но user_id для этой проверки берётся из заголовка X-User-Id, который задаёт клиент (app/security.py:3-13; app/main.py:14). Подставив X-User-Id владельца счёта списания (ID последовательные: 1, 2, ...), злоумышленник списывает средства с этого счёта на любой существующий счёт. Корневая причина — доверие к идентичности от клиента (RC-1), общая с manual.idor.read-foreign-transaction-history. Semgrep это не находит: уязвимость в связке «клиентский ключ объекта + клиентская идентичность», а не в синтаксическом шаблоне.",
+    "cwe": [
+      "CWE-639: Authorization Bypass Through User-Controlled Key",
+      "CWE-290: Authentication Bypass by Spoofing"
+    ],
+    "owasp": [
+      "A01:2021 - Broken Access Control",
+      "API1:2023 - Broken Object Level Authorization"
+    ],
+    "impact": "HIGH",
+    "likelihood": "HIGH",
+    "confidence": "HIGH",
+    "triage": {
+      "status": "confirmed",
+      "evidence": "evidence/dynamic_checks.log:13-14 (шаг 2): X-User-Id: 1, from_account_id=1 -> HTTP 200, transaction_id=1, списание 1000 со счёта 1. Для сравнения строки 21-22 (шаг 3): X-User-Id: 2 и тот же счёт -> 403"
+    },
+    "fix": "Идентичность только из проверенного токена (OAuth2/OIDC JWT, проверка подписи/aud/exp); владение счётом проверять по субъекту токена; ID счетов не последовательные (UUID) как defence-in-depth; deny-by-default тесты на авторизацию.",
+    "root_cause": "RC-1"
+  },
+  {
+    "check_id": "manual.idor.read-foreign-transaction-history",
+    "path": "microservice/app/main.py",
+    "start_line": 18,
+    "end_line": 24,
+    "severity": "ERROR",
+    "message": "IDOR в GET /transactions. Объект — история выбранного владельца: user_id берётся из заголовка X-User-Id (app/security.py:3-13; app/main.py:20), выборка ограничена условием a.owner_user_id = $1 по счёту ОТПРАВИТЕЛЯ (JOIN accounts a ON a.id = t.from_account_id, app/crud.py:52-58) и лимитом (limit 1..100, app/main.py:21). В ответ попадают исходящие операции счетов этого владельца (id, счета, сумма, время), не более limit за запрос; входящие операции не возвращаются; при непустом значении по ключу Redis tx:{uid}:{limit}:{search} возвращается пустой список (app/crud.py:45-48). Подставляя чужой X-User-Id, клиент читает исходящие операции любого владельца — раскрытие сведений, составляющих банковскую тайну. Корневая причина — RC-1, общая с manual.idor.transfer-from-foreign-account.",
+    "cwe": [
+      "CWE-639: Authorization Bypass Through User-Controlled Key",
+      "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+    ],
+    "owasp": [
+      "A01:2021 - Broken Access Control",
+      "API1:2023 - Broken Object Level Authorization"
+    ],
+    "impact": "HIGH",
+    "likelihood": "HIGH",
+    "confidence": "HIGH",
+    "triage": {
+      "status": "confirmed",
+      "evidence": "evidence/dynamic_checks.log:17-18 (шаг 2b): X-User-Id: 1 -> HTTP 200, одна исходящая операция пользователя 1 (id 1, счёт 1 -> 2, 1000). Это пример одного ответа, а не наблюдение по всем клиентам"
+    },
+    "fix": "То же, что для /transfer: субъект из токена, а не из заголовка; rate limit и алерт на перебор.",
+    "root_cause": "RC-1"
+  },
+  {
+    "check_id": "manual.logic.cache-invalidation-key-mismatch",
+    "path": "microservice/app/crud.py",
+    "start_line": 40,
+    "end_line": 40,
+    "severity": "WARNING",
+    "message": "После перевода удаляется ключ tx:{user_id}, а list_transactions читает ключи tx:{user_id}:{limit}:{search}. Инвалидация не срабатывает: при включении записи в кэш клиент увидит устаревшую историю; записанные извне ключи переживают переводы.",
+    "cwe": [
+      "CWE-840: Business Logic Errors"
+    ],
+    "impact": "MEDIUM",
+    "likelihood": "MEDIUM",
+    "confidence": "HIGH",
+    "triage": {
+      "status": "confirmed",
+      "evidence": "evidence/dynamic_checks.log, шаг 7b: EXISTS tx:2:20: = 1 после перевода"
+    },
+    "fix": "Единая функция построения ключа; инвалидация по префиксу/версии (tx:{uid}:v{n}) или отказ от кэширования финансовых данных."
+  },
+  {
+    "check_id": "manual.logic.transfer-no-idempotency-no-rate-limit",
+    "path": "microservice/app/main.py",
+    "start_line": 13,
+    "end_line": 16,
+    "severity": "WARNING",
+    "message": "POST /transfer не поддерживает идемпотентность и не ограничен по частоте. (1) Механизма нет: код не читает Idempotency-Key, в transactions нет уникального ключа операции. (2) Наблюдаемое повторное списание: два одинаковых POST создают две операции (сетевой ретрай, replay перехваченного запроса, двойной клик). Ограничения частоты нет — автоматизированный вывод средств и перебор не сдерживаются.",
+    "cwe": [
+      "CWE-294: Authentication Bypass by Capture-replay",
+      "CWE-799: Improper Control of Interaction Frequency"
+    ],
+    "owasp": [
+      "API4:2023 - Unrestricted Resource Consumption",
+      "API6:2023 - Unrestricted Access to Sensitive Business Flows"
+    ],
+    "impact": "MEDIUM",
+    "likelihood": "MEDIUM",
+    "confidence": "HIGH",
+    "triage": {
+      "status": "confirmed",
+      "evidence": "evidence/replay_check.log: 2 одинаковых POST -> 2 операции (tx 20, 21), баланс 100000 -> 95000 вместо 97500; с одинаковым Idempotency-Key -> ещё 2 операции (tx 22, 23). Rate limiting — по коду (ограничителей нет), нагрузочно не проверялся"
+    },
+    "fix": "Обязательный Idempotency-Key + UNIQUE(initiator, idempotency_key); rate limit на API-шлюзе; лимиты и антифрод-скоринг для переводов."
+  },
+  {
+    "check_id": "manual.logging.no-audit-trail-of-initiator",
+    "path": "microservice/app/crud.py",
+    "start_line": 35,
+    "end_line": 38,
+    "severity": "WARNING",
+    "message": "В transactions пишутся только from/to/amount. В коде приложения нет журналирования: не фиксируются инициатор (user_id), request-id, параметры и решение авторизации. Access-log uvicorn (если включён) пишет метод, путь, код ответа и IP, но не инициатора. Спорную операцию нельзя надёжно расследовать (STRIDE: Repudiation).",
+    "cwe": [
+      "CWE-778: Insufficient Logging",
+      "CWE-223: Omission of Security-relevant Information"
+    ],
+    "owasp": [
+      "A09:2021 - Security Logging and Monitoring Failures"
+    ],
+    "impact": "MEDIUM",
+    "likelihood": "HIGH",
+    "confidence": "HIGH",
+    "triage": {
+      "status": "confirmed",
+      "evidence": "код: INSERT INTO transactions(from_account_id,to_account_id,amount_cents); вызовов logging в app/ нет"
+    },
+    "fix": "Append-only аудит-журнал (initiator, request-id, src IP, решение авторизации) с отправкой в SIEM; алерты на 403-всплески и перебор ID."
+  },
+  {
+    "check_id": "manual.transport.api-plain-http",
+    "path": "microservice/docker-compose.yml",
+    "start_line": 25,
+    "end_line": 26,
+    "severity": "INFO",
+    "message": "В docker-compose API публикуется на 8000/tcp, TLS-терминатор (reverse proxy/ingress) не описан. Наличие TLS на внешнем ingress по материалам не устанавливается; без него заголовок идентичности и финансовые данные идут открытым текстом.",
+    "cwe": [
+      "CWE-319: Cleartext Transmission of Sensitive Information"
+    ],
+    "owasp": [
+      "A02:2021 - Cryptographic Failures"
+    ],
+    "impact": "MEDIUM",
+    "likelihood": "MEDIUM",
+    "confidence": "MEDIUM",
+    "triage": {
+      "status": "confirmed",
+      "evidence": "docker-compose.yml: ports 8000:8000, TLS-прокси в конфигурации нет; Dockerfile в репозитории отсутствует"
+    },
+    "fix": "TLS 1.2+/1.3 на ingress/API-шлюзе, HSTS; mTLS между сервисами внутри периметра."
+  }
+]

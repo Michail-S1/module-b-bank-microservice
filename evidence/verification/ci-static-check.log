@@ -1,0 +1,36 @@
+OK   YAML разобран
+OK   валидация по схеме GitLab CI: 0 ошибок
+OK   все stage заданий объявлены в stages
+OK   sast-semgrep-report.before_script[0] — строка (str)
+OK   sast-semgrep-report.script[0] — строка (str)
+OK   sast-semgrep-report: нет job-level when вместе с rules
+OK   sast-semgrep-report: artifacts:when=always
+OK   sast-semgrep-gate.script[0] — строка (str)
+OK   sast-semgrep-gate: нет job-level when вместе с rules
+OK   sast-semgrep-gate: needs -> sast-semgrep-report существует
+OK   sca-pip-audit.before_script[0] — строка (str)
+OK   sca-pip-audit.script[0] — строка (str)
+OK   sca-pip-audit: нет job-level when вместе с rules
+OK   sca-pip-audit: artifacts:when=always
+OK   secrets-gitleaks.script[0] — строка (str)
+OK   secrets-gitleaks: нет job-level when вместе с rules
+OK   secrets-gitleaks: artifacts:when=always
+OK   iac-trivy.script[0] — строка (str)
+OK   iac-trivy: нет job-level when вместе с rules
+OK   iac-trivy: artifacts:when=always
+OK   upload-defectdojo.script[0] — строка (str)
+OK   upload-defectdojo: нет job-level when вместе с rules
+OK   upload-defectdojo: needs -> sast-semgrep-report существует
+OK   upload-defectdojo: needs -> sca-pip-audit существует
+OK   upload-defectdojo: needs -> secrets-gitleaks существует
+OK   upload-defectdojo: needs -> iac-trivy существует
+OK   путь tools/run_semgrep.sh используется и существует
+OK   путь tools/semgrep_gate.py используется и существует
+OK   путь microservice/requirements.txt используется и существует
+OK   путь microservice используется и существует
+OK   нет pip-audit -r requirements.txt (неверный путь)
+OK   SARIF публикуется через artifacts:reports:sarif
+OK   SARIF не объявлен как reports:sast
+OK   SHA правил совпадает в CI и run_semgrep.sh (a5ad1714f00c)
+
+ИТОГ: все проверки пройдены

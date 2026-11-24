@@ -1,0 +1,61 @@
+OK   YAML разобран
+OK   валидация по схеме GitLab CI: 0 ошибок
+OK   все stage заданий объявлены в stages
+OK   sast-semgrep-report.before_script[0] — строка (str)
+OK   sast-semgrep-report.script[0] — строка (str)
+OK   sast-semgrep-report: нет job-level when вместе с rules
+OK   sast-semgrep-report: artifacts:when=always
+OK   sast-semgrep-gate.script[0] — строка (str)
+OK   sast-semgrep-gate: нет job-level when вместе с rules
+OK   sast-semgrep-gate: needs -> sast-semgrep-report существует
+OK   sca-pip-audit.before_script[0] — строка (str)
+OK   sca-pip-audit.script[0] — строка (str)
+OK   sca-pip-audit: нет job-level when вместе с rules
+OK   sca-pip-audit: artifacts:when=always
+OK   secrets-gitleaks.script[0] — строка (str)
+OK   secrets-gitleaks: нет job-level when вместе с rules
+OK   secrets-gitleaks: artifacts:when=always
+OK   iac-trivy.script[0] — строка (str)
+OK   iac-trivy: нет job-level when вместе с rules
+OK   iac-trivy: artifacts:when=always
+OK   upload-defectdojo.script[0] — строка (str)
+OK   upload-defectdojo: нет job-level when вместе с rules
+OK   upload-defectdojo: needs -> sast-semgrep-report существует
+OK   upload-defectdojo: needs -> sca-pip-audit существует
+OK   upload-defectdojo: needs -> secrets-gitleaks существует
+OK   upload-defectdojo: needs -> iac-trivy существует
+OK   путь tools/run_semgrep.sh используется и существует
+OK   путь tools/semgrep_gate.py используется и существует
+OK   путь microservice/requirements.txt используется и существует
+OK   путь microservice используется и существует
+OK   нет pip-audit -r requirements.txt (неверный путь)
+OK   SARIF публикуется через artifacts:reports:sarif
+OK   SARIF не объявлен как reports:sast
+OK   SHA правил совпадает в CI и run_semgrep.sh (a5ad1714f00c)
+     |  • Scan was limited to files tracked by git
+     |  • For a detailed list of skipped files and lines, run semgrep with the --verbose flag
+     | Ran 702 rules on 9 files: 25 findings.
+OK   run sast-semgrep-report: exit=0 (ожидалось 0)
+OK   semgrep.json: 25 находок (ожидалось 25)
+OK   артефакт semgrep.json создан
+OK   semgrep.sarif: SARIF 2.1.0, ошибок схемы 0, results=25
+OK   артефакт semgrep.sarif создан
+     | ERROR   semgrep.bank.compose-datastore-port-published  microservice/docker-compose.yml:18
+     | ERROR   semgrep.bank.compose-credentials-in-dsn  microservice/docker-compose.yml:23
+     | gate: 6 находок уровня ['ERROR'] из 25
+OK   run sast-semgrep-gate: exit=1 (ожидалось 1)
+     | Found 16 known vulnerabilities in 2 packages
+OK   run sca-pip-audit: exit=1 (ожидалось 1)
+OK   артефакт pip-audit.json создан
+     | [90m8:27PM[0m [32mINF[0m 1 commits scanned.
+     | [90m8:27PM[0m [32mINF[0m scan completed in 217ms
+     | [90m8:27PM[0m [32mINF[0m no leaks found
+OK   run secrets-gitleaks: exit=0 (ожидалось 0)
+OK   артефакт gitleaks.json создан
+     | 2026-11-24T20:27:24Z	INFO	[checks-client] Downloading the checks bundle...
+     | 2026-11-24T20:27:24Z	ERROR	[misconfig] Falling back to embedded checks	err="failed to download checks bundle: download error: OCI repository error: 1 
+     | 2026-11-24T20:27:25Z	INFO	Detected config files	num=0
+OK   run iac-trivy: exit=0 (ожидалось 0)
+OK   артефакт trivy-config.json создан
+
+ИТОГ: все проверки пройдены

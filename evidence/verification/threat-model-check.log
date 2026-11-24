@@ -1,0 +1,7 @@
+# Валидация модели по схеме Threat Dragon v2 (td.vue/src/assets/schema/threat-dragon-v2.schema.json, OWASP/threat-dragon c27988f, ajv)
+valid: true
+карточек: 22 threatTop: 22
+статусы: {'Open': 22}
+критичность: {'Critical': 5, 'Medium': 11, 'High': 4, 'Low': 2}
+номера 1..N без пропусков: True
+у каждой карточки метка [RC-: True

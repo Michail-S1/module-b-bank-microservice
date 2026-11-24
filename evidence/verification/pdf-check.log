@@ -1,0 +1,24 @@
+OK   threat-model/threat-model-report.pdf: открывается, страниц 15
+OK   threat-model/threat-model-report.pdf: размер страниц [(842, 595)] (A4 альбомная)
+OK   threat-model/threat-model-report.pdf: пустых страниц нет (доля «чернил» по страницам: min 0.0041)
+     малозаполненные страницы (вёрстка источника): [2]
+OK   threat-model/threat-model-report.pdf: все 22 карточки модели присутствуют (по началу заголовка); нет: []
+OK   threat-model/threat-model-report.pdf: содержит «Потенциальная регрессия к SQL Injection»
+OK   threat-model/threat-model-report.pdf: содержит «Не подтверждены механизмы резервного»
+OK   threat-model/threat-model-report.pdf: содержит «необеспеченные зачисления»
+OK   threat-model/threat-model-report.pdf: содержит «[RC-1]»
+OK   threat-model/threat-model-report.pdf: содержит «OWASP Threat Dragon»
+OK   threat-model/threat-model-report.pdf: содержит «Фактическое шифрование соединения не проверено»
+OK   threat-model/threat-model-report.pdf: содержит «существование получателя не доказывают»
+OK   threat-model/threat-model-report.pdf: содержит «SQL Injection в этом запросе не подтверждена»
+OK   threat-model/threat-model-report.pdf: содержит «исходящие операции счетов выбранного владельца»
+OK   threat-model/threat-model-report.pdf: нет формулировки «из воздуха»
+OK   threat-model/threat-model-report.pdf: нет утверждения «канал не шифруется» (ИСПР-11)
+OK   threat-model/threat-model-report.pdf: 400 не служит доказательством оракула (ИСПР-12)
+OK   threat-model/threat-register.pdf: открывается, страниц 12
+OK   threat-model/threat-register.pdf: размер страниц [(842, 595)] (A4 альбомная)
+OK   threat-model/threat-register.pdf: пустых страниц нет (доля «чернил» по страницам: min 0.1042)
+OK   threat-model/threat-register.pdf: помечен как не экспорт Threat Dragon
+OK   threat-model/threat-register.pdf: все 22 карточек описаны
+
+ИТОГ: все проверки пройдены
